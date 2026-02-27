@@ -42,6 +42,7 @@ export default function DashboardPage() {
   const [oturum, setOturum] = useState<Oturum | null>(null);
   const [formAcik, setFormAcik] = useState(false);
   const [ozetKopyalandi, setOzetKopyalandi] = useState(false);
+  const [linkKopyalandiBildirim, setLinkKopyalandiBildirim] = useState(false);
 
   const yenile = useCallback(() => {
     setSatirlar(
@@ -80,7 +81,11 @@ export default function DashboardPage() {
   function kopyala(linkId: string) {
     navigator.clipboard.writeText(`${window.location.origin}/referans/${linkId}`);
     setKopyalandi(linkId);
-    setTimeout(() => setKopyalandi(null), 2000);
+    setLinkKopyalandiBildirim(true);
+    setTimeout(() => {
+      setKopyalandi(null);
+      setLinkKopyalandiBildirim(false);
+    }, 3000);
   }
 
   if (!mounted) return null;
@@ -279,6 +284,13 @@ export default function DashboardPage() {
             setFormAcik(false);
           }}
         />
+      )}
+
+      {linkKopyalandiBildirim && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-start gap-3 bg-emerald-600 text-white px-5 py-3.5 rounded-2xl shadow-2xl shadow-emerald-900/40 text-sm font-medium max-w-sm w-full mx-4">
+          <Check className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span>Link kopyalandı! Bu linki eski ev sahibinizle WhatsApp veya email ile paylaşabilirsiniz.</span>
+        </div>
       )}
     </main>
   );

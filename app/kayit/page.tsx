@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { kullaniciKaydet } from "@/lib/store";
 import {
   Home,
   User,
@@ -94,16 +93,14 @@ export default function KayitPage() {
     if (!dogrula()) return;
     setGenelHata(null);
     setYukleniyor(true);
-    await new Promise((r) => setTimeout(r, 800));
-    const sonuc = kullaniciKaydet({
-      adSoyad: form.adSoyad,
-      email: form.email,
-      sifre: form.sifre,
-      telefon: form.telefon,
-      rol: rol!,
+    const res = await fetch("/api/auth/kayit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adSoyad: form.adSoyad, email: form.email, sifre: form.sifre, telefon: form.telefon, rol }),
     });
-    if (!sonuc.basarili) {
-      setGenelHata(sonuc.hata ?? "Kayıt sırasında bir hata oluştu.");
+    const veri = await res.json();
+    if (!veri.basarili) {
+      setGenelHata(veri.hata ?? "Kayıt sırasında bir hata oluştu.");
       setYukleniyor(false);
       return;
     }

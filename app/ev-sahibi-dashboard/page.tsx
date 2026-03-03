@@ -25,32 +25,17 @@ import {
   Mail,
   ChevronDown,
   ChevronUp,
+  Calendar,
+  Trash2,
+  MessageSquare,
+  Info,
 } from "lucide-react";
 import {
-  linkReferanslari,
   riskHesapla,
   riskBilgisi,
-  linkGoruntule,
-  goruntulenenLinkleri,
-  kararEkle,
-  linkKarari,
-  tokendenLinkId,
-  oturumuGetir,
-  oturumuSil,
-  linkSahibiKim,
-  kullaniciGetir,
-  ozetTokendenKullaniciId,
-  kullanicininTumLinkleri,
-  goruntulenenOzetleri,
-  ozetGoruntule,
   type ReferansFormu,
   type ReferansLinki,
-  type GoruntulenenLink,
-  type GoruntulenenOzet,
-  type EvsahibiKarari,
   type RiskSeviyesi,
-  type Oturum,
-  type Kullanici,
 } from "@/lib/store";
 
 // ── Soru tanımları ────────────────────────────────────────────────────────────
@@ -82,36 +67,71 @@ const SORULAR = [
   },
 ] as const;
 
-type SoruAlani = (typeof SORULAR)[number]["alan"];
+// ── Yardımcı ──────────────────────────────────────────────────────────────────
 
-// ── Link ID çıkarıcı ──────────────────────────────────────────────────────────
+const AYLAR_ES = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 
-function linkIdCikar(input: string): string {
-  // rapor-paylas linki → token'dan linkId'yi çöz
-  const raporMatch = input.trim().match(/\/rapor-paylas\/([a-z0-9]+)/i);
-  if (raporMatch) return tokendenLinkId(raporMatch[1]) ?? "";
-  // referans linki veya düz ID
-  const refMatch = input.trim().match(/\/referans\/([a-z0-9]+)/i);
-  return refMatch ? refMatch[1] : input.trim();
+function kiraDonemiEs(bas?: string | null, bitis?: string | null): string | null {
+  if (!bas && !bitis) return null;
+  const fmt = (iso: string) => {
+    const d = new Date(iso);
+    return `${AYLAR_ES[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  };
+  if (bas && bitis) return `${fmt(bas)} – ${fmt(bitis)}`;
+  if (bas) return `${fmt(bas)} –`;
+  return `– ${fmt(bitis!)}`;
 }
 
-// ── Sonuç tipi ────────────────────────────────────────────────────────────────
+// ── Tipler ────────────────────────────────────────────────────────────────────
+
+interface LinkMeta {
+  evsahibiAdi?: string | null;
+  sehir?: string | null;
+  kiraBaslangic?: string | null;
+  kiraBitis?: string | null;
+}
+
+interface OturumDurumu {
+  id: string;
+  adSoyad: string;
+  email: string;
+  rol: string;
+}
+
+interface KiraciInfo {
+  id: string;
+  adSoyad: string;
+  email: string;
+  telefon: string;
+}
 
 interface Sonuc {
   linkId: string;
   refs: ReferansFormu[];
   risk: RiskSeviyesi | null;
-  kiraci: Kullanici | null;
+  kiraci: KiraciInfo | null;
   goruntulenmeTarihi: string;
+  linkMeta?: LinkMeta;
 }
 
 interface OzetSonuc {
   kullaniciId: string;
-  kiraci: Kullanici | null;
+  kiraci: KiraciInfo | null;
   linkler: { link: ReferansLinki; refs: ReferansFormu[] }[];
   tumRefs: ReferansFormu[];
   risk: RiskSeviyesi | null;
   goruntulenmeTarihi: string;
+}
+
+interface GecmisItem {
+  linkId: string;
+  goruntulenmeTarihi: string;
+  kiraciId: string | null;
+  kiraciAdSoyad: string;
+  evsahibiAdi?: string | null;
+  kiraBaslangic?: string | null;
+  kiraBitis?: string | null;
+  refs: ReferansFormu[];
 }
 
 // ── Ana bileşen ───────────────────────────────────────────────────────────────
@@ -122,77 +142,214 @@ export default function EvsahibiDashboard() {
   const [sonuc, setSonuc] = useState<Sonuc | null>(null);
   const [ozetSonuc, setOzetSonuc] = useState<OzetSonuc | null>(null);
   const [hata, setHata] = useState<string | null>(null);
-  const [goruntulenenler, setGoruntulenenler] = useState<GoruntulenenLink[]>([]);
-  const [goruntulenenOzetler, setGoruntulenenOzetler] = useState<GoruntulenenOzet[]>([]);
+  const [goruntulenenler, setGoruntulenenler] = useState<GecmisItem[]>([]);
+  const [kararlar, setKararlar] = useState<Record<string, "verir" | "vermez" | "kiralandı">>({});
+  const [sebepler, setSebepler] = useState<Record<string, string>>({});
   const [mounted, setMounted] = useState(false);
-  const [oturum, setOturum] = useState<Oturum | null>(null);
+  const [oturum, setOturum] = useState<OturumDurumu | null>(null);
+  const [aktifSekme, setAktifSekme] = useState<"bekleyen" | "verir" | "vermez" | "tamamlandi">("bekleyen");
 
-  const yenile = useCallback(() => {
-    setGoruntulenenler(goruntulenenLinkleri());
-    setGoruntulenenOzetler(goruntulenenOzetleri());
+  const yenile = useCallback(async () => {
+    const [gorRes, karRes] = await Promise.all([
+      fetch("/api/ev-sahibi/goruntulenenler"),
+      fetch("/api/ev-sahibi/karar"),
+    ]);
+    if (gorRes.ok) {
+      const dbItems: GecmisItem[] = await gorRes.json();
+      // DB'den gelen kayıtları in-memory kayıtlarla birleştir (in-memory kaybetme)
+      setGoruntulenenler((prev) => {
+        const dbIds = new Set(dbItems.map((i) => i.linkId));
+        const memoryOnly = prev.filter((i) => !dbIds.has(i.linkId));
+        return [...dbItems, ...memoryOnly];
+      });
+    }
+    if (karRes.ok) {
+      const karListesi: { linkId: string; karar: string; sebep?: string | null }[] = await karRes.json();
+      const map: Record<string, "verir" | "vermez" | "kiralandı"> = {};
+      const sebepler: Record<string, string> = {};
+      karListesi.forEach((k) => {
+        map[k.linkId] = k.karar as "verir" | "vermez" | "kiralandı";
+        if (k.sebep) sebepler[k.linkId] = k.sebep;
+      });
+      setKararlar(map);
+      setSebepler(sebepler);
+    }
   }, []);
 
   useEffect(() => {
-    const aktifOturum = oturumuGetir();
-    if (!aktifOturum || aktifOturum.rol !== "evsahibi") {
-      router.replace("/giris");
-      return;
-    }
-    setOturum(aktifOturum);
-    setMounted(true);
-    yenile();
+    fetch("/api/auth/oturum")
+      .then((r) => r.json())
+      .then((aktifOturum) => {
+        if (!aktifOturum || aktifOturum.rol !== "evsahibi") {
+          router.replace("/giris");
+          return;
+        }
+        setOturum(aktifOturum);
+        setMounted(true);
+        yenile();
+      });
   }, [yenile, router]);
 
-  function cikisYap() {
-    oturumuSil();
+  async function cikisYap() {
+    await fetch("/api/auth/cikis", { method: "POST" });
     router.push("/giris");
   }
 
-  function goruntule() {
-    // Özet link kontrolü
-    const ozetMatch = girdi.trim().match(/\/ozet\/([a-z0-9]+)/i);
-    if (ozetMatch) {
-      const kullaniciId = ozetTokendenKullaniciId(ozetMatch[1]);
-      if (!kullaniciId) {
-        setHata("Özet linki geçersiz veya bu tarayıcıda oluşturulmamış.");
-        return;
-      }
-      const kiraci = kullaniciGetir(kullaniciId);
-      const linkler = kullanicininTumLinkleri(kullaniciId).map((link) => ({
-        link,
-        refs: linkReferanslari(link.id),
-      }));
-      const tumRefs = linkler.flatMap((l) => l.refs);
-      ozetGoruntule(kullaniciId);
-      setSonuc(null);
-      setOzetSonuc({ kullaniciId, kiraci, linkler, tumRefs, risk: riskHesapla(tumRefs), goruntulenmeTarihi: new Date().toISOString() });
-      yenile();
-      setHata(null);
-      return;
-    }
-
-    const linkId = linkIdCikar(girdi);
-    if (!linkId) {
-      if (girdi.includes("rapor-paylas")) {
-        setHata("Rapor linki geçersiz veya bu tarayıcıda oluşturulmamış.");
-      } else {
-        setHata("Lütfen geçerli bir link veya link ID'si girin.");
-      }
-      return;
-    }
-    const refs = linkReferanslari(linkId);
-    linkGoruntule(linkId);
-    const kullaniciId = linkSahibiKim(linkId);
-    const kiraci = kullaniciId ? kullaniciGetir(kullaniciId) : null;
-    setOzetSonuc(null);
-    setSonuc({ linkId, refs, risk: riskHesapla(refs), kiraci, goruntulenmeTarihi: new Date().toISOString() });
-    setHata(null);
-    yenile();
+  async function fetchKiraci(linkId: string): Promise<KiraciInfo | null> {
+    const gecerliRes = await fetch(`/api/linkler/gecerli?id=${linkId}`);
+    if (!gecerliRes.ok) return null;
+    const gecerli = await gecerliRes.json();
+    if (!gecerli?.kullaniciId) return null;
+    const kulRes = await fetch(`/api/kullanici?id=${gecerli.kullaniciId}`);
+    return kulRes.ok ? kulRes.json() : null;
   }
 
-  function karar(linkId: string, k: "verir" | "vermez") {
-    kararEkle(linkId, k);
-    yenile();
+  async function goruntule() {
+    setHata(null);
+    const input = girdi.trim();
+
+    // Özet link
+    const ozetMatch = input.match(/\/ozet\/([a-z0-9]+)/i);
+    if (ozetMatch) {
+      const res = await fetch(`/api/ozet?token=${ozetMatch[1]}`);
+      const veri = await res.json();
+      if (!veri.gecerli) {
+        setHata("Özet linki geçersiz.");
+        return;
+      }
+      const linkler = (
+        veri.linkler as (ReferansLinki & { referanslar: ReferansFormu[] })[]
+      ).map((l) => ({ link: l, refs: l.referanslar ?? [] }));
+      const tumRefs = linkler.flatMap((l) => l.refs);
+      const kulRes = await fetch(`/api/kullanici?id=${veri.kullaniciId}`);
+      const kiraci: KiraciInfo | null = kulRes.ok ? await kulRes.json() : null;
+      setSonuc(null);
+      setOzetSonuc({
+        kullaniciId: veri.kullaniciId,
+        kiraci,
+        linkler,
+        tumRefs,
+        risk: riskHesapla(tumRefs),
+        goruntulenmeTarihi: new Date().toISOString(),
+      });
+      setHata(null);
+      await yenile();
+      return;
+    }
+
+    // Rapor-paylas link
+    const raporMatch = input.match(/\/rapor-paylas\/([a-z0-9]+)/i);
+    if (raporMatch) {
+      const res = await fetch(`/api/rapor?token=${raporMatch[1]}`);
+      const veri = await res.json();
+      if (!veri.gecerli) {
+        setHata("Rapor linki geçersiz veya bu tarayıcıda oluşturulmamış.");
+        return;
+      }
+      const refs: ReferansFormu[] = veri.referanslar;
+      const kiraci = await fetchKiraci(veri.linkId);
+      const gorTarihi = new Date().toISOString();
+      const linkMeta: LinkMeta | undefined = veri.linkMeta ?? undefined;
+
+      // Optimistic update ÖNCE — rapor göster ve geçmişe ekle
+      setGoruntulenenler((prev) => {
+        const filtered = prev.filter((g) => g.linkId !== veri.linkId);
+        return [{ linkId: veri.linkId, goruntulenmeTarihi: gorTarihi, kiraciId: kiraci?.id ?? null, kiraciAdSoyad: kiraci?.adSoyad ?? "Bilinmeyen Kiracı", refs }, ...filtered];
+      });
+      setOzetSonuc(null);
+      setSonuc({ linkId: veri.linkId, refs, risk: riskHesapla(refs), kiraci, goruntulenmeTarihi: gorTarihi, linkMeta });
+      setHata(null);
+
+      // DB'ye kaydet (ardından DB'den senkronize et)
+      await fetch("/api/ev-sahibi/goruntule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ linkId: veri.linkId }),
+      });
+      await yenile();
+      return;
+    }
+
+    // Referans linki veya düz linkId
+    const refMatch = input.match(/\/referans\/([a-z0-9]+)/i);
+    const linkId = refMatch ? refMatch[1] : input;
+
+    if (!linkId) {
+      setHata("Lütfen geçerli bir link veya link ID'si girin.");
+      return;
+    }
+
+    const [refsRes, gecerliRes] = await Promise.all([
+      fetch(`/api/referanslar?linkId=${linkId}`),
+      fetch(`/api/linkler/gecerli?id=${linkId}`),
+    ]);
+    if (!refsRes.ok) {
+      setHata("Link bulunamadı.");
+      return;
+    }
+    const refs: ReferansFormu[] = await refsRes.json();
+    const gecerliVeri = gecerliRes.ok ? await gecerliRes.json() : null;
+    const linkMeta: LinkMeta | undefined = gecerliVeri?.gecerli
+      ? { evsahibiAdi: gecerliVeri.evsahibiAdi, sehir: gecerliVeri.sehir, kiraBaslangic: gecerliVeri.kiraBaslangic, kiraBitis: gecerliVeri.kiraBitis }
+      : undefined;
+    const kiraci = gecerliVeri?.kullaniciId
+      ? await fetch(`/api/kullanici?id=${gecerliVeri.kullaniciId}`).then((r) => r.ok ? r.json() : null)
+      : null;
+    const gorTarihi = new Date().toISOString();
+
+    // Optimistic update ÖNCE — rapor göster ve geçmişe ekle
+    setGoruntulenenler((prev) => {
+      const filtered = prev.filter((g) => g.linkId !== linkId);
+      return [{ linkId, goruntulenmeTarihi: gorTarihi, kiraciId: kiraci?.id ?? null, kiraciAdSoyad: kiraci?.adSoyad ?? "Bilinmeyen Kiracı", refs }, ...filtered];
+    });
+    setOzetSonuc(null);
+    setSonuc({ linkId, refs, risk: riskHesapla(refs), kiraci, goruntulenmeTarihi: gorTarihi, linkMeta });
+    setHata(null);
+
+    // DB'ye kaydet (ardından DB'den senkronize et)
+    await fetch("/api/ev-sahibi/goruntule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ linkId }),
+    });
+    await yenile();
+  }
+
+  async function karar(linkId: string, k: "verir" | "vermez" | "kiralandı", sebep?: string) {
+    // Anında görsel güncelleme
+    setKararlar((prev) => ({ ...prev, [linkId]: k }));
+    if (k === "vermez" && sebep) {
+      setSebepler((prev) => ({ ...prev, [linkId]: sebep }));
+    }
+
+    await fetch("/api/ev-sahibi/karar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ linkId, karar: k, ...(sebep ? { sebep } : {}) }),
+    });
+
+    // DB ile senkronize et, mevcut in-memory kararları koru
+    const karRes = await fetch("/api/ev-sahibi/karar");
+    if (karRes.ok) {
+      const karListesi: { linkId: string; karar: string; sebep?: string | null }[] = await karRes.json();
+      const dbMap: Record<string, "verir" | "vermez" | "kiralandı"> = {};
+      const dbSebepler: Record<string, string> = {};
+      karListesi.forEach((item) => {
+        dbMap[item.linkId] = item.karar as "verir" | "vermez" | "kiralandı";
+        if (item.sebep) dbSebepler[item.linkId] = item.sebep;
+      });
+      setKararlar((prev) => ({ ...prev, ...dbMap }));
+      setSebepler((prev) => ({ ...prev, ...dbSebepler }));
+    }
+  }
+
+  async function gecmisKaydiSil(linkId: string) {
+    // Optimistic update
+    setGoruntulenenler((prev) => prev.filter((g) => g.linkId !== linkId));
+    setKararlar((prev) =>
+      Object.fromEntries(Object.entries(prev).filter(([k]) => k !== linkId)) as Record<string, "verir" | "vermez">
+    );
+    await fetch(`/api/ev-sahibi/goruntulenenler?linkId=${linkId}`, { method: "DELETE" });
   }
 
   if (!mounted) return null;
@@ -283,7 +440,6 @@ export default function EvsahibiDashboard() {
         {/* ── Sonuç paneli ── */}
         {sonuc && (
           <div className="mb-8">
-            {/* Başlık + Kapat */}
             <div className="flex items-start justify-between mb-4">
               <div>
                 <h2 className="text-white font-bold text-xl">
@@ -301,7 +457,7 @@ export default function EvsahibiDashboard() {
                 </p>
               </div>
               <button
-                onClick={() => { setSonuc(null); setGirdi(""); }}
+                onClick={() => setSonuc(null)}
                 className="flex items-center gap-1.5 text-slate-400 hover:text-white text-xs font-semibold border border-white/10 hover:border-white/25 rounded-lg px-3 py-1.5 transition-colors flex-shrink-0 mt-0.5"
               >
                 <X className="w-3.5 h-3.5" />
@@ -320,7 +476,34 @@ export default function EvsahibiDashboard() {
                 </p>
               </div>
             ) : (
-              <ReferansSonuclari sonuc={sonuc} />
+              <>
+                <ReferansSonuclari sonuc={sonuc} />
+                <div className="mt-4 bg-white/5 border border-white/10 rounded-2xl p-6">
+                  <p className="text-slate-300 text-sm font-semibold mb-4">
+                    Bu kiracı hakkında kararınız:
+                  </p>
+                  <div className="flex gap-3">
+                    <KararButonu
+                      aktif={kararlar[sonuc.linkId] === "verir"}
+                      tip="verir"
+                      kiraci={sonuc.kiraci}
+                      linkId={sonuc.linkId}
+                      onKarar={(k) => karar(sonuc.linkId, k)}
+                    />
+                    <button
+                      onClick={() => karar(sonuc.linkId, "vermez")}
+                      className={`flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-xl border-2 transition-all ${
+                        kararlar[sonuc.linkId] === "vermez"
+                          ? "bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/30"
+                          : "border-white/10 text-slate-400 hover:border-red-500/50 hover:text-red-400 hover:bg-red-500/10"
+                      }`}
+                    >
+                      <XCircle className="w-4 h-4" />
+                      Vermem
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         )}
@@ -342,7 +525,7 @@ export default function EvsahibiDashboard() {
                 </p>
               </div>
               <button
-                onClick={() => { setOzetSonuc(null); setGirdi(""); }}
+                onClick={() => setOzetSonuc(null)}
                 className="flex items-center gap-1.5 text-slate-400 hover:text-white text-xs font-semibold border border-white/10 hover:border-white/25 rounded-lg px-3 py-1.5 transition-colors flex-shrink-0 mt-0.5"
               >
                 <X className="w-3.5 h-3.5" />
@@ -352,13 +535,31 @@ export default function EvsahibiDashboard() {
             <OzetSonuclari ozetSonuc={ozetSonuc} />
 
             {/* Karar bölümü */}
-            <OzetKararBolumu
-              ozetSonuc={ozetSonuc}
-              onKarar={(k) => {
-                kararEkle("ozet_" + ozetSonuc.kullaniciId, k);
-                yenile();
-              }}
-            />
+            <div className="mt-6 bg-white/5 border border-white/10 rounded-2xl p-6">
+              <p className="text-slate-300 text-sm font-semibold mb-4">
+                Bu kiracı hakkında kararınız:
+              </p>
+              <div className="flex gap-3">
+                <KararButonu
+                  aktif={kararlar["ozet_" + ozetSonuc.kullaniciId] === "verir"}
+                  tip="verir"
+                  kiraci={ozetSonuc.kiraci}
+                  linkId={"ozet_" + ozetSonuc.kullaniciId}
+                  onKarar={(k) => karar("ozet_" + ozetSonuc.kullaniciId, k)}
+                />
+                <button
+                  onClick={() => karar("ozet_" + ozetSonuc.kullaniciId, "vermez")}
+                  className={`flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-xl border-2 transition-all ${
+                    kararlar["ozet_" + ozetSonuc.kullaniciId] === "vermez"
+                      ? "bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/30"
+                      : "border-white/10 text-slate-400 hover:border-red-500/50 hover:text-red-400 hover:bg-red-500/10"
+                  }`}
+                >
+                  <XCircle className="w-4 h-4" />
+                  Vermem
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -369,7 +570,7 @@ export default function EvsahibiDashboard() {
             <h2 className="text-lg font-bold text-white">Görüntüleme Geçmişi</h2>
           </div>
 
-          {goruntulenenler.length === 0 && goruntulenenOzetler.length === 0 ? (
+          {goruntulenenler.length === 0 ? (
             <div className="bg-white/5 border border-white/10 border-dashed rounded-2xl p-10 text-center">
               <div className="w-14 h-14 bg-indigo-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <History className="w-7 h-7 text-indigo-400" />
@@ -379,60 +580,152 @@ export default function EvsahibiDashboard() {
                 Yukarıya bir referans linki yapıştırıp &ldquo;Görüntüle&rdquo; butonuna bastığınızda burada listelenir.
               </p>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {[
-                ...goruntulenenler.map((g) => ({ tip: "link" as const, tarih: g.goruntulenmeTarihi, veri: g })),
-                ...goruntulenenOzetler.map((o) => ({ tip: "ozet" as const, tarih: o.goruntulenmeTarihi, veri: o })),
-              ]
-                .sort((a, b) => new Date(b.tarih).getTime() - new Date(a.tarih).getTime())
-                .map((item) =>
-                  item.tip === "link" ? (
-                    <GecmisKarti
-                      key={"link_" + item.veri.linkId}
-                      goruntulenen={item.veri}
-                      mevcutKarar={linkKarari(item.veri.linkId)}
-                      onKarar={(k) => karar(item.veri.linkId, k)}
-                      onGoruntule={() => {
-                        const refs = linkReferanslari(item.veri.linkId);
-                        const uid = linkSahibiKim(item.veri.linkId);
-                        const kiraci = uid ? kullaniciGetir(uid) : null;
-                        setOzetSonuc(null);
-                        setSonuc({ linkId: item.veri.linkId, refs, risk: riskHesapla(refs), kiraci, goruntulenmeTarihi: item.veri.goruntulenmeTarihi });
-                        window.scrollTo({ top: 0, behavior: "smooth" });
-                      }}
-                    />
-                  ) : (
-                    <GecmisOzetKarti
-                      key={"ozet_" + item.veri.kullaniciId}
-                      goruntulenenOzet={item.veri}
-                      mevcutKarar={linkKarari("ozet_" + item.veri.kullaniciId)}
-                      onKarar={(k) => { kararEkle("ozet_" + item.veri.kullaniciId, k); yenile(); }}
-                      onGoruntule={() => {
-                        const uid = item.veri.kullaniciId;
-                        const kiraci = kullaniciGetir(uid);
-                        const linkler = kullanicininTumLinkleri(uid).map((link) => ({ link, refs: linkReferanslari(link.id) }));
-                        const tumRefs = linkler.flatMap((l) => l.refs);
-                        setSonuc(null);
-                        setOzetSonuc({ kullaniciId: uid, kiraci, linkler, tumRefs, risk: riskHesapla(tumRefs), goruntulenmeTarihi: item.veri.goruntulenmeTarihi });
-                        window.scrollTo({ top: 0, behavior: "smooth" });
-                      }}
-                    />
-                  )
+          ) : (() => {
+            const bekleyenler   = goruntulenenler.filter((g) => !kararlar[g.linkId]);
+            const verilenler    = goruntulenenler.filter((g) => kararlar[g.linkId] === "verir");
+            const reddedilenler = goruntulenenler.filter((g) => kararlar[g.linkId] === "vermez");
+            const tamamlananlar = goruntulenenler.filter((g) => kararlar[g.linkId] === "kiralandı");
+            const sekmeler = [
+              { id: "bekleyen"   as const, etiket: "Bekleyenler",    count: bekleyenler.length,   dotRenk: "bg-amber-400" },
+              { id: "verir"      as const, etiket: "Kirayı Veririm", count: verilenler.length,    dotRenk: "bg-emerald-400" },
+              { id: "vermez"     as const, etiket: "Vermem",         count: reddedilenler.length, dotRenk: "bg-red-400" },
+              { id: "tamamlandi" as const, etiket: "Tamamlandı",     count: tamamlananlar.length, dotRenk: "bg-indigo-400" },
+            ];
+            const aktifItems =
+              aktifSekme === "bekleyen"   ? bekleyenler   :
+              aktifSekme === "verir"      ? verilenler    :
+              aktifSekme === "vermez"     ? reddedilenler :
+                                           tamamlananlar;
+
+            const boslukMesaji: Record<string, { baslik: string; aciklama: string }> = {
+              bekleyen:   { baslik: "Bekleyen kiracı yok", aciklama: "Tüm kiracılar için karar verdiniz." },
+              verir:      { baslik: "Henüz kimseye kirayı vermediniz", aciklama: "Kart üzerindeki \"Kirayı Veririm\" butonunu kullanın." },
+              vermez:     { baslik: "Henüz kimseyi reddetmediniz", aciklama: "Kart üzerindeki \"Vermem\" butonunu kullanın." },
+              tamamlandi: { baslik: "Tamamlanan kiralama yok", aciklama: "\"Kirayı Veririm\" sekmesindeki kartlarda \"Kiraladım\" butonuna basın." },
+            };
+
+            return (
+              <>
+                {/* Sekme butonları */}
+                <div className="flex bg-white/5 border border-white/10 rounded-xl p-1 mb-4 gap-1">
+                  {sekmeler.map((sekme) => (
+                    <button
+                      key={sekme.id}
+                      onClick={() => setAktifSekme(sekme.id)}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold transition-all ${
+                        aktifSekme === sekme.id
+                          ? "bg-white/10 text-white"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${sekme.dotRenk} ${aktifSekme === sekme.id ? "opacity-100" : "opacity-50"}`} />
+                      <span className="hidden sm:inline">{sekme.etiket}</span>
+                      <span className="sm:hidden">{sekme.etiket.split(" ")[0]}</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
+                        aktifSekme === sekme.id ? "bg-white/15 text-white" : "bg-white/5 text-slate-500"
+                      }`}>
+                        {sekme.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Liste */}
+                {aktifItems.length === 0 ? (
+                  <div className="bg-white/5 border border-white/10 border-dashed rounded-2xl p-8 text-center">
+                    <p className="text-white font-semibold mb-1">{boslukMesaji[aktifSekme].baslik}</p>
+                    <p className="text-slate-400 text-sm">{boslukMesaji[aktifSekme].aciklama}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {aktifItems.map((item) => (
+                      <GecmisKarti
+                        key={item.linkId}
+                        item={item}
+                        karar={kararlar[item.linkId]}
+                        sebep={sebepler[item.linkId]}
+                        onKarar={(k, s) => karar(item.linkId, k, s)}
+                        onSil={() => gecmisKaydiSil(item.linkId)}
+                        onGoruntule={() => {
+                          setOzetSonuc(null);
+                          setSonuc({
+                            linkId: item.linkId,
+                            refs: item.refs,
+                            risk: riskHesapla(item.refs),
+                            kiraci: item.kiraciId
+                              ? { id: item.kiraciId, adSoyad: item.kiraciAdSoyad, email: "", telefon: "" }
+                              : null,
+                            goruntulenmeTarihi: item.goruntulenmeTarihi,
+                            linkMeta: (item.kiraBaslangic || item.kiraBitis)
+                              ? { kiraBaslangic: item.kiraBaslangic, kiraBitis: item.kiraBitis }
+                              : undefined,
+                          });
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                      />
+                    ))}
+                  </div>
                 )}
-            </div>
-          )}
+              </>
+            );
+          })()}
         </section>
       </div>
     </main>
   );
 }
 
+// ── Karar butonu (Kirayı Veririm + modal) ─────────────────────────────────────
+
+function KararButonu({
+  aktif,
+  kiraci,
+  linkId,
+  onKarar,
+}: {
+  aktif: boolean;
+  tip: "verir";
+  kiraci: KiraciInfo | null;
+  linkId: string;
+  onKarar: (k: "verir" | "vermez") => void;
+}) {
+  const [modalAcik, setModalAcik] = useState(false);
+
+  function kiriyaVer() {
+    onKarar("verir");
+    setModalAcik(true);
+  }
+
+  return (
+    <>
+      <button
+        onClick={kiriyaVer}
+        className={`flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-xl border-2 transition-all ${
+          aktif
+            ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/30"
+            : "border-white/10 text-slate-400 hover:border-emerald-500/50 hover:text-emerald-400 hover:bg-emerald-500/10"
+        }`}
+      >
+        <CheckCircle2 className="w-4 h-4" />
+        Kirayı Veririm
+      </button>
+      {modalAcik && (
+        <KiraciModal
+          kiraci={kiraci}
+          linkId={linkId}
+          onKapat={() => setModalAcik(false)}
+        />
+      )}
+    </>
+  );
+}
+
 // ── Referans sonuçları paneli ─────────────────────────────────────────────────
 
 function ReferansSonuclari({ sonuc }: { sonuc: Sonuc }) {
-  const { linkId, refs, risk } = sonuc;
+  const { linkId, refs, risk, linkMeta } = sonuc;
   const riskInfo = riskBilgisi(risk);
+  const donemi = kiraDonemiEs(linkMeta?.kiraBaslangic, linkMeta?.kiraBitis);
 
   return (
     <div className="space-y-4">
@@ -443,7 +736,7 @@ function ReferansSonuclari({ sonuc }: { sonuc: Sonuc }) {
             <RiskIkonu seviye={risk} />
           </div>
           <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full ${riskInfo.badge}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${riskInfo.dot}`} />
                 {riskInfo.etiket}
@@ -451,6 +744,12 @@ function ReferansSonuclari({ sonuc }: { sonuc: Sonuc }) {
               <span className="text-xs text-gray-400">{refs.length} değerlendirme · …{linkId.slice(-8)}</span>
             </div>
             <p className="text-gray-600 text-sm leading-relaxed">{riskInfo.aciklama}</p>
+            {donemi && (
+              <div className="flex items-center gap-1.5 mt-2 text-xs text-gray-500">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>{donemi}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -472,18 +771,8 @@ function ReferansSonuclari({ sonuc }: { sonuc: Sonuc }) {
                 {soru.secenekler.map((secenek, i) => {
                   const adet = dagilim[i];
                   const yuzde = toplam > 0 ? Math.round((adet / toplam) * 100) : 0;
-                  const barCls =
-                    i === 0
-                      ? "bg-emerald-500"
-                      : i === 1
-                      ? "bg-amber-500"
-                      : "bg-red-500";
-                  const textCls =
-                    i === 0
-                      ? "text-emerald-400"
-                      : i === 1
-                      ? "text-amber-400"
-                      : "text-red-400";
+                  const barCls = i === 0 ? "bg-emerald-500" : i === 1 ? "bg-amber-500" : "bg-red-500";
+                  const textCls = i === 0 ? "text-emerald-400" : i === 1 ? "text-amber-400" : "text-red-400";
 
                   return (
                     <div key={i}>
@@ -514,39 +803,45 @@ function ReferansSonuclari({ sonuc }: { sonuc: Sonuc }) {
 // ── Geçmiş kartı ──────────────────────────────────────────────────────────────
 
 function GecmisKarti({
-  goruntulenen,
-  mevcutKarar,
+  item,
+  karar,
+  sebep,
   onKarar,
+  onSil,
   onGoruntule,
 }: {
-  goruntulenen: GoruntulenenLink;
-  mevcutKarar: EvsahibiKarari | null;
-  onKarar: (k: "verir" | "vermez") => void;
+  item: GecmisItem;
+  karar: "verir" | "vermez" | "kiralandı" | undefined;
+  sebep?: string;
+  onKarar: (k: "verir" | "vermez" | "kiralandı", sebep?: string) => void;
+  onSil: () => void;
   onGoruntule: () => void;
 }) {
-  const { linkId, goruntulenmeTarihi } = goruntulenen;
-  const [modalAcik, setModalAcik] = useState(false);
-  const [kiraci, setKiraci] = useState<Kullanici | null>(null);
+  const [kiraciModalAcik, setKiraciModalAcik] = useState(false);
+  const [detayModalAcik, setDetayModalAcik] = useState(false);
+  const [vermezModalAcik, setVermezModalAcik] = useState(false);
+  const [kiraci, setKiraci] = useState<KiraciInfo | null>(null);
+  const risk = riskHesapla(item.refs);
+  const riskInfo = riskBilgisi(risk);
 
-  const kiraciAdi = (() => {
-    const uid = linkSahibiKim(linkId);
-    return uid ? (kullaniciGetir(uid)?.adSoyad ?? "Bilinmeyen Kiracı") : "Bilinmeyen Kiracı";
-  })();
-
-  const gecmisRisk = riskHesapla(linkReferanslari(linkId));
-  const gecmisRiskInfo = riskBilgisi(gecmisRisk);
-
-  function kiriyaVer() {
+  async function kiriyaVer() {
     onKarar("verir");
-    const kullaniciId = linkSahibiKim(linkId);
-    const kullanici = kullaniciId ? kullaniciGetir(kullaniciId) : null;
-    setKiraci(kullanici);
-    setModalAcik(true);
+    if (item.kiraciId) {
+      const res = await fetch(`/api/kullanici?id=${item.kiraciId}`);
+      if (res.ok) setKiraci(await res.json());
+    }
+    setKiraciModalAcik(true);
   }
+
+  const tamamlandi = karar === "kiralandı";
 
   return (
     <>
-      <div className="bg-white/5 border border-white/10 hover:border-white/20 rounded-2xl p-5 transition-all">
+      <div className={`border rounded-2xl p-5 transition-all ${
+        tamamlandi
+          ? "bg-emerald-500/5 border-emerald-500/20 hover:border-emerald-500/30"
+          : "bg-white/5 border-white/10 hover:border-white/20"
+      }`}>
         <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1.5">
@@ -554,27 +849,27 @@ function GecmisKarti({
                 onClick={onGoruntule}
                 className="text-white hover:text-indigo-300 font-semibold text-sm transition-colors"
               >
-                {kiraciAdi}
+                {item.kiraciAdSoyad}
               </button>
-              <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${gecmisRiskInfo.badge}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${gecmisRiskInfo.dot}`} />
-                {gecmisRisk ? gecmisRiskInfo.etiket : "Değerlendirme Yok"}
+              <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${riskInfo.badge}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${riskInfo.dot}`} />
+                {risk ? riskInfo.etiket : "Değerlendirme Yok"}
               </span>
-              {mevcutKarar && (
-                <span
-                  className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                    mevcutKarar.karar === "verir"
-                      ? "bg-emerald-500/20 text-emerald-300"
-                      : "bg-red-500/20 text-red-300"
-                  }`}
-                >
-                  {mevcutKarar.karar === "verir" ? "✓ Kirayı Veririm" : "✕ Vermem"}
+              {tamamlandi && (
+                <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">
+                  <CheckCircle2 className="w-3 h-3" />
+                  Kiralandı
+                </span>
+              )}
+              {karar === "vermez" && sebep && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-red-500/15 text-red-400">
+                  {sebep}
                 </span>
               )}
             </div>
             <div className="flex items-center gap-1.5 text-xs text-slate-500">
               <Clock className="w-3 h-3" />
-              {new Date(goruntulenmeTarihi).toLocaleString("tr-TR", {
+              {new Date(item.goruntulenmeTarihi).toLocaleString("tr-TR", {
                 day: "numeric",
                 month: "long",
                 year: "numeric",
@@ -582,40 +877,104 @@ function GecmisKarti({
                 minute: "2-digit",
               })}
             </div>
+            {(item.kiraBaslangic || item.kiraBitis) && (
+              <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                <Calendar className="w-3 h-3" />
+                {kiraDonemiEs(item.kiraBaslangic, item.kiraBitis)}
+              </div>
+            )}
           </div>
 
-          <div className="flex gap-2 flex-shrink-0">
-            <button
-              onClick={kiriyaVer}
-              className={`flex items-center gap-1.5 text-xs font-bold px-4 py-2.5 rounded-xl border-2 transition-all ${
-                mevcutKarar?.karar === "verir"
-                  ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/30"
-                  : "border-white/10 text-slate-400 hover:border-emerald-500/50 hover:text-emerald-400 hover:bg-emerald-500/10"
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Kirayı Veririm
-            </button>
-            <button
-              onClick={() => onKarar("vermez")}
-              className={`flex items-center gap-1.5 text-xs font-bold px-4 py-2.5 rounded-xl border-2 transition-all ${
-                mevcutKarar?.karar === "vermez"
-                  ? "bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/30"
-                  : "border-white/10 text-slate-400 hover:border-red-500/50 hover:text-red-400 hover:bg-red-500/10"
-              }`}
-            >
-              <XCircle className="w-3.5 h-3.5" />
-              Vermem
-            </button>
+          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+            {/* Detayı Gör butonu — hep görünür */}
+            {item.refs.length > 0 && (
+              <button
+                onClick={() => setDetayModalAcik(true)}
+                title="Referans detaylarını gör"
+                className="flex items-center gap-1 text-xs font-semibold px-3 py-2 rounded-xl border border-white/10 text-slate-400 hover:text-indigo-300 hover:border-indigo-400/30 hover:bg-indigo-500/10 transition-all"
+              >
+                <Info className="w-3.5 h-3.5" />
+                Detayı Gör
+              </button>
+            )}
+
+            {tamamlandi ? (
+              /* Tamamlandı sekmesi: sadece sil butonu */
+              <button
+                onClick={onSil}
+                title="Geçmişten sil"
+                className="flex items-center justify-center w-8 h-8 rounded-xl border border-white/10 text-slate-600 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 transition-all"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={kiriyaVer}
+                  className={`flex items-center gap-1.5 text-xs font-bold px-4 py-2.5 rounded-xl border-2 transition-all ${
+                    karar === "verir"
+                      ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/30"
+                      : "border-white/10 text-slate-400 hover:border-emerald-500/50 hover:text-emerald-400 hover:bg-emerald-500/10"
+                  }`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Kirayı Veririm
+                </button>
+                {karar === "verir" && (
+                  <button
+                    onClick={() => onKarar("kiralandı")}
+                    className="flex items-center gap-1.5 text-xs font-bold px-4 py-2.5 rounded-xl border-2 border-indigo-500/40 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 hover:border-indigo-400/60 transition-all"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    Kiraladım
+                  </button>
+                )}
+                <button
+                  onClick={() => setVermezModalAcik(true)}
+                  className={`flex items-center gap-1.5 text-xs font-bold px-4 py-2.5 rounded-xl border-2 transition-all ${
+                    karar === "vermez"
+                      ? "bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/30"
+                      : "border-white/10 text-slate-400 hover:border-red-500/50 hover:text-red-400 hover:bg-red-500/10"
+                  }`}
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                  Vermem
+                </button>
+                <button
+                  onClick={onSil}
+                  title="Geçmişten sil"
+                  className="flex items-center justify-center w-8 h-8 rounded-xl border border-white/10 text-slate-600 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 transition-all"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      {modalAcik && (
+      {kiraciModalAcik && (
         <KiraciModal
           kiraci={kiraci}
-          linkId={linkId}
-          onKapat={() => setModalAcik(false)}
+          linkId={item.linkId}
+          onKapat={() => setKiraciModalAcik(false)}
+        />
+      )}
+
+      {detayModalAcik && (
+        <DetayModal
+          item={item}
+          onKapat={() => setDetayModalAcik(false)}
+        />
+      )}
+
+      {vermezModalAcik && (
+        <VermezSebebiModal
+          onSec={(s) => {
+            setVermezModalAcik(false);
+            onKarar("vermez", s);
+          }}
+          onKapat={() => setVermezModalAcik(false)}
         />
       )}
     </>
@@ -629,7 +988,7 @@ function KiraciModal({
   linkId,
   onKapat,
 }: {
-  kiraci: Kullanici | null;
+  kiraci: KiraciInfo | null;
   linkId: string;
   onKapat: () => void;
 }) {
@@ -666,15 +1025,12 @@ function KiraciModal({
       className="fixed inset-0 z-50 flex items-center justify-center px-4"
       onClick={onKapat}
     >
-      {/* Overlay */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
 
-      {/* Kart */}
       <div
         className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl shadow-black/40 p-8 animate-in fade-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Kapat butonu */}
         <button
           onClick={onKapat}
           className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
@@ -683,7 +1039,6 @@ function KiraciModal({
           <X className="w-4 h-4" />
         </button>
 
-        {/* Başlık */}
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
@@ -716,15 +1071,9 @@ function KiraciModal({
                   aria-label={`${etiket} kopyala`}
                 >
                   {kopyalandi === alan ? (
-                    <>
-                      <Check className="w-3 h-3" />
-                      Kopyalandı
-                    </>
+                    <><Check className="w-3 h-3" />Kopyalandı</>
                   ) : (
-                    <>
-                      <Copy className="w-3 h-3" />
-                      Kopyala
-                    </>
+                    <><Copy className="w-3 h-3" />Kopyala</>
                   )}
                 </button>
               </div>
@@ -751,165 +1100,210 @@ function KiraciModal({
   );
 }
 
-// ── Özet karar bölümü ────────────────────────────────────────────────────────
+// ── Referans detay modalı ─────────────────────────────────────────────────────
 
-function OzetKararBolumu({
-  ozetSonuc,
-  onKarar,
+const DETAY_KATEGORI_RENK: Record<number, { bg: string; border: string; text: string }> = {
+  0: { bg: "bg-emerald-50", border: "border-emerald-100", text: "text-emerald-700" },
+  1: { bg: "bg-amber-50",   border: "border-amber-100",   text: "text-amber-700"   },
+  2: { bg: "bg-red-50",     border: "border-red-100",     text: "text-red-700"     },
+};
+
+const DETAY_KATEGORI_ISIMLER: Record<string, string> = {
+  kiraOdemesi: "Kira Ödemesi",
+  evDurumu: "Ev Durumu",
+  iletisim: "İletişim",
+  tasinma: "Taşınma",
+};
+
+const DETAY_KATEGORI_ETIKETLER: Record<string, [string, string, string]> = {
+  kiraOdemesi: ["Zamanında", "Arada Geç", "Sık Sık Geç"],
+  evDurumu:    ["Hasarsız Teslim", "Küçük Sorunlar", "Hasarlı Teslim"],
+  iletisim:    ["Kolay Ulaşılır", "Karışık", "Ulaşmak Zor"],
+  tasinma:     ["Sorunsuz", "Ortalama", "Sorunlu"],
+};
+
+function DetayModal({
+  item,
+  onKapat,
 }: {
-  ozetSonuc: OzetSonuc;
-  onKarar: (k: "verir" | "vermez") => void;
+  item: GecmisItem;
+  onKapat: () => void;
 }) {
-  const [modalAcik, setModalAcik] = useState(false);
-  const [kiraci, setKiraci] = useState<Kullanici | null>(null);
-  const mevcutKarar = linkKarari("ozet_" + ozetSonuc.kullaniciId);
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onKapat();
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onKapat]);
 
-  function kiriyaVer() {
-    onKarar("verir");
-    setKiraci(ozetSonuc.kiraci);
-    setModalAcik(true);
-  }
+  const donemi = kiraDonemiEs(item.kiraBaslangic, item.kiraBitis);
 
   return (
-    <>
-      <div className="mt-6 bg-white/5 border border-white/10 rounded-2xl p-6">
-        <p className="text-slate-300 text-sm font-semibold mb-4">
-          Bu kiracı hakkında kararınız:
-        </p>
-        <div className="flex gap-3">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      onClick={onKapat}
+    >
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl shadow-black/40 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        style={{ maxHeight: "85vh" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-gray-100">
+          <div>
+            <h2 className="text-base font-extrabold text-gray-900">Referans Detayları</h2>
+            <p className="text-sm text-gray-500 mt-0.5">{item.kiraciAdSoyad}</p>
+            {donemi && (
+              <div className="flex items-center gap-1.5 text-xs text-gray-400 mt-1">
+                <Calendar className="w-3.5 h-3.5" />
+                {donemi}
+              </div>
+            )}
+          </div>
           <button
-            onClick={kiriyaVer}
-            className={`flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-xl border-2 transition-all ${
-              mevcutKarar?.karar === "verir"
-                ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/30"
-                : "border-white/10 text-slate-400 hover:border-emerald-500/50 hover:text-emerald-400 hover:bg-emerald-500/10"
-            }`}
+            onClick={onKapat}
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
           >
-            <CheckCircle2 className="w-4 h-4" />
-            Kirayı Veririm
+            <X className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto px-6 py-4 space-y-4" style={{ maxHeight: "calc(85vh - 160px)" }}>
+          {item.refs.length === 0 ? (
+            <p className="text-center text-gray-400 text-sm py-8">Henüz referans formu doldurulmamış.</p>
+          ) : (
+            item.refs.map((ref, idx) => (
+              <div key={idx} className="bg-gray-50 border border-gray-100 rounded-xl p-4">
+                {/* Kim doldurdu + tarih */}
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {ref.dolduranAdi || "Anonim"}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {new Date(ref.gonderilenAt).toLocaleDateString("tr-TR", {
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                      })}
+                    </p>
+                  </div>
+                  <span className="text-xs text-gray-300 font-mono">{idx + 1}/{item.refs.length}</span>
+                </div>
+
+                {/* Kategori skorları */}
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  {(["kiraOdemesi", "evDurumu", "iletisim", "tasinma"] as const).map((alan) => {
+                    const val = ref[alan] as 0 | 1 | 2;
+                    const renk = DETAY_KATEGORI_RENK[val];
+                    return (
+                      <div key={alan} className={`rounded-lg px-3 py-2 ${renk.bg} border ${renk.border}`}>
+                        <p className="text-xs text-gray-400 mb-0.5">{DETAY_KATEGORI_ISIMLER[alan]}</p>
+                        <p className={`text-xs font-semibold ${renk.text}`}>
+                          {DETAY_KATEGORI_ETIKETLER[alan][val]}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Yorum */}
+                {ref.yorum && (
+                  <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
+                    <p className="flex items-center gap-1 text-xs font-semibold text-indigo-500 mb-1">
+                      <MessageSquare className="w-3 h-3" />
+                      Yorum
+                    </p>
+                    <p className="text-sm text-indigo-800 leading-relaxed">{ref.yorum}</p>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 pb-6 pt-2 border-t border-gray-100">
           <button
-            onClick={() => onKarar("vermez")}
-            className={`flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-xl border-2 transition-all ${
-              mevcutKarar?.karar === "vermez"
-                ? "bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/30"
-                : "border-white/10 text-slate-400 hover:border-red-500/50 hover:text-red-400 hover:bg-red-500/10"
-            }`}
+            onClick={onKapat}
+            className="w-full py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm font-semibold transition-colors"
           >
-            <XCircle className="w-4 h-4" />
-            Vermem
+            Kapat
           </button>
         </div>
       </div>
-      {modalAcik && (
-        <KiraciModal
-          kiraci={kiraci}
-          linkId={ozetSonuc.kullaniciId}
-          onKapat={() => { setModalAcik(false); }}
-        />
-      )}
-    </>
+    </div>
   );
 }
 
-// ── Geçmiş özet kartı ─────────────────────────────────────────────────────────
+// ── Vermem sebebi seçim modalı ────────────────────────────────────────────────
 
-function GecmisOzetKarti({
-  goruntulenenOzet,
-  mevcutKarar,
-  onKarar,
-  onGoruntule,
+const VERMEZ_SEBEPLER = [
+  "Ödeme düzensiz",
+  "İletişim zor",
+  "Riskli hissettirdi",
+  "Genel olarak güvenmedim",
+  "Diğer",
+];
+
+function VermezSebebiModal({
+  onSec,
+  onKapat,
 }: {
-  goruntulenenOzet: GoruntulenenOzet;
-  mevcutKarar: EvsahibiKarari | null;
-  onKarar: (k: "verir" | "vermez") => void;
-  onGoruntule: () => void;
+  onSec: (sebep: string) => void;
+  onKapat: () => void;
 }) {
-  const { kullaniciId, goruntulenmeTarihi } = goruntulenenOzet;
-  const [modalAcik, setModalAcik] = useState(false);
-  const [kiraci, setKiraci] = useState<Kullanici | null>(null);
-
-  const kiraciAdi = kullaniciGetir(kullaniciId)?.adSoyad ?? "Bilinmeyen Kiracı";
-
-  function kiriyaVer() {
-    onKarar("verir");
-    setKiraci(kullaniciGetir(kullaniciId) ?? null);
-    setModalAcik(true);
-  }
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onKapat();
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onKapat]);
 
   return (
-    <>
-      <div className="bg-white/5 border border-white/10 hover:border-white/20 rounded-2xl p-5 transition-all">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 mb-1.5">
-              <button
-                onClick={onGoruntule}
-                className="text-white hover:text-indigo-300 font-semibold text-sm transition-colors"
-              >
-                {kiraciAdi}
-              </button>
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300">
-                Genel Özet
-              </span>
-              {mevcutKarar && (
-                <span
-                  className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                    mevcutKarar.karar === "verir"
-                      ? "bg-emerald-500/20 text-emerald-300"
-                      : "bg-red-500/20 text-red-300"
-                  }`}
-                >
-                  {mevcutKarar.karar === "verir" ? "✓ Kirayı Veririm" : "✕ Vermem"}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <Clock className="w-3 h-3" />
-              {new Date(goruntulenmeTarihi).toLocaleString("tr-TR", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </div>
-          </div>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      onClick={onKapat}
+    >
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl shadow-black/40 p-6 animate-in fade-in zoom-in-95 duration-150"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onKapat}
+          className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
 
-          <div className="flex gap-2 flex-shrink-0">
-            <button
-              onClick={kiriyaVer}
-              className={`flex items-center gap-1.5 text-xs font-bold px-4 py-2.5 rounded-xl border-2 transition-all ${
-                mevcutKarar?.karar === "verir"
-                  ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/30"
-                  : "border-white/10 text-slate-400 hover:border-emerald-500/50 hover:text-emerald-400 hover:bg-emerald-500/10"
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Kirayı Veririm
-            </button>
-            <button
-              onClick={() => onKarar("vermez")}
-              className={`flex items-center gap-1.5 text-xs font-bold px-4 py-2.5 rounded-xl border-2 transition-all ${
-                mevcutKarar?.karar === "vermez"
-                  ? "bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/30"
-                  : "border-white/10 text-slate-400 hover:border-red-500/50 hover:text-red-400 hover:bg-red-500/10"
-              }`}
-            >
-              <XCircle className="w-3.5 h-3.5" />
-              Vermem
-            </button>
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-9 h-9 bg-red-100 rounded-xl flex items-center justify-center">
+            <XCircle className="w-5 h-5 text-red-500" />
+          </div>
+          <div>
+            <h2 className="text-base font-extrabold text-gray-900">Kararınızın sebebi nedir?</h2>
+            <p className="text-xs text-gray-400">Bir seçenek seçin</p>
           </div>
         </div>
+
+        <div className="space-y-2">
+          {VERMEZ_SEBEPLER.map((sebep) => (
+            <button
+              key={sebep}
+              onClick={() => onSec(sebep)}
+              className="w-full text-left text-sm font-medium px-4 py-3 rounded-xl border-2 border-gray-100 bg-gray-50 hover:border-red-200 hover:bg-red-50 hover:text-red-700 transition-all"
+            >
+              {sebep}
+            </button>
+          ))}
+        </div>
       </div>
-      {modalAcik && (
-        <KiraciModal
-          kiraci={kiraci}
-          linkId={kullaniciId}
-          onKapat={() => setModalAcik(false)}
-        />
-      )}
-    </>
+    </div>
   );
 }
 
@@ -974,10 +1368,18 @@ function OzetSonuclari({ ozetSonuc }: { ozetSonuc: OzetSonuc }) {
                       <span className={`w-1.5 h-1.5 rounded-full ${lInfo.dot}`} />
                       {lInfo.etiket}
                     </span>
-                    <span className="flex-1 text-white text-sm font-medium truncate">
-                      {link.evsahibiAdi ?? "İsimsiz Referans"}
-                      {link.sehir && <span className="text-slate-400 font-normal"> · {link.sehir}</span>}
-                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-white text-sm font-medium truncate">
+                        {link.evsahibiAdi ?? "İsimsiz Referans"}
+                        {link.sehir && <span className="text-slate-400 font-normal"> · {link.sehir}</span>}
+                      </div>
+                      {(link.kiraBaslangic || link.kiraBitis) && (
+                        <div className="flex items-center gap-1 mt-0.5 text-xs text-slate-400">
+                          <Calendar className="w-3 h-3 flex-shrink-0" />
+                          <span>{kiraDonemiEs(link.kiraBaslangic, link.kiraBitis)}</span>
+                        </div>
+                      )}
+                    </div>
                     <span className="text-xs text-slate-500 flex-shrink-0">{refs.length} ref</span>
                     {acik
                       ? <ChevronUp className="w-4 h-4 text-slate-500 flex-shrink-0" />

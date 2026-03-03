@@ -7,6 +7,8 @@ export interface ReferansLinki {
   kullaniciId?: string; // linki oluşturan kullanıcı
   evsahibiAdi?: string; // bu linkin gönderileceği ev sahibinin adı
   sehir?: string;       // isteğe bağlı şehir/ilçe
+  kiraBaslangic?: string; // ISO date, ayın 1'i (sadece ay+yıl kullanılır)
+  kiraBitis?: string;     // ISO date, ayın 1'i (sadece ay+yıl kullanılır)
 }
 
 export interface ReferansFormu {
@@ -15,6 +17,8 @@ export interface ReferansFormu {
   evDurumu: 0 | 1 | 2;
   iletisim: 0 | 1 | 2;
   tasinma: 0 | 1 | 2;
+  dolduranAdi?: string | null;
+  yorum?: string | null;
   gonderilenAt: string;
 }
 

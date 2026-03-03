@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Home, Eye, EyeOff, ArrowRight } from "lucide-react";
-import { kullaniciGiris, oturumuKaydet } from "@/lib/store";
 
 interface FormData {
   email: string;
@@ -57,15 +56,18 @@ export default function GirisPage() {
     if (!dogrula()) return;
     setGenelHata(null);
     setYukleniyor(true);
-    await new Promise((r) => setTimeout(r, 700));
-    const kullanici = kullaniciGiris(form.email, form.sifre);
-    if (!kullanici) {
-      setGenelHata("E-posta veya şifre hatalı.");
+    const res = await fetch("/api/auth/giris", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: form.email, sifre: form.sifre }),
+    });
+    const veri = await res.json();
+    if (!res.ok) {
+      setGenelHata(veri.hata ?? "E-posta veya şifre hatalı.");
       setYukleniyor(false);
       return;
     }
-    oturumuKaydet(kullanici);
-    if (kullanici.rol === "evsahibi") {
+    if (veri.rol === "evsahibi") {
       router.push("/ev-sahibi-dashboard");
     } else {
       router.push("/dashboard");

@@ -3,8 +3,8 @@
 import { useState, use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Home, ChevronRight, AlertCircle } from "lucide-react";
-import { referansEkle, linkGoruntule, referansGonderildiIsaretle, linkSahibiKim, oturumuGetir, type ReferansFormu } from "@/lib/store";
+import { Home, ChevronRight, AlertCircle, CheckCircle2 } from "lucide-react";
+import type { ReferansFormu } from "@/lib/store";
 
 // ── Sorular ───────────────────────────────────────────────────────────────────
 
@@ -75,18 +75,33 @@ export default function ReferansFormuSayfasi({
   const router = useRouter();
 
   const [kendiLinki, setKendiLinki] = useState(false);
+  const [zatenDolduruldu, setZatenDolduruldu] = useState(false);
   const [cevaplar, setCevaplar] = useState<Partial<Record<AlanAdi, Deger>>>({});
   const [hatalar, setHatalar] = useState<Partial<Record<AlanAdi, boolean>>>({});
   const [gonderiliyor, setGonderiliyor] = useState(false);
+  const [dolduranAdi, setDolduranAdi] = useState("");
+  const [yorum, setYorum] = useState("");
 
   useEffect(() => {
-    const sahip = linkSahibiKim(linkId);
-    const oturum = oturumuGetir();
-    if (sahip && oturum && sahip === oturum.kullaniciId) {
-      setKendiLinki(true);
-      return;
-    }
-    linkGoruntule(linkId);
+    // Daha önce bu tarayıcıdan doldurulmuş mu?
+    try {
+      const gonderilen: string[] = JSON.parse(localStorage.getItem("kcm_gonderilen_refs") || "[]");
+      if (gonderilen.includes(linkId)) {
+        setZatenDolduruldu(true);
+        return;
+      }
+    } catch {}
+
+    fetch(`/api/linkler/gecerli?id=${linkId}`)
+      .then((r) => r.json())
+      .then(async (data) => {
+        if (!data.gecerli) return;
+        const oturumRes = await fetch("/api/auth/oturum");
+        const oturum = await oturumRes.json();
+        if (oturum && data.kullaniciId && oturum.id === data.kullaniciId) {
+          setKendiLinki(true);
+        }
+      });
   }, [linkId]);
 
   function sec(alan: AlanAdi, deger: Deger) {
@@ -113,18 +128,34 @@ export default function ReferansFormuSayfasi({
     }
 
     setGonderiliyor(true);
-    await new Promise((r) => setTimeout(r, 600));
 
-    const form: ReferansFormu = {
+    const body = {
       linkId,
       kiraOdemesi: cevaplar.kiraOdemesi as Deger,
       evDurumu: cevaplar.evDurumu as Deger,
       iletisim: cevaplar.iletisim as Deger,
       tasinma: cevaplar.tasinma as Deger,
-      gonderilenAt: new Date().toISOString(),
+      dolduranAdi: dolduranAdi.trim() || null,
+      yorum: yorum.trim() || null,
     };
-    referansEkle(form);
-    referansGonderildiIsaretle(linkId);
+
+    const res = await fetch("/api/referanslar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      setGonderiliyor(false);
+      return;
+    }
+
+    // Bu tarayıcıdan doldurulan linkId'yi kaydet
+    try {
+      const gonderilen: string[] = JSON.parse(localStorage.getItem("kcm_gonderilen_refs") || "[]");
+      localStorage.setItem("kcm_gonderilen_refs", JSON.stringify([...gonderilen, linkId]));
+    } catch {}
+
     router.push(`/referans/${linkId}/tesekkurler`);
   }
 
@@ -160,8 +191,25 @@ export default function ReferansFormuSayfasi({
       {/* Kart */}
       <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl shadow-black/30 overflow-hidden">
 
+        {/* Daha önce dolduruldu uyarısı */}
+        {zatenDolduruldu && (
+          <div className="px-8 py-10 flex flex-col items-center text-center gap-5">
+            <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center">
+              <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+            </div>
+            <div>
+              <h2 className="text-xl font-extrabold text-gray-900 mb-2">
+                Zaten değerlendirdiniz
+              </h2>
+              <p className="text-gray-500 text-sm leading-relaxed">
+                Bu referans formunu daha önce doldurdunuz. Her form yalnızca bir kez gönderilebilir. Katkınız için teşekkür ederiz!
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Kendi linkini açma uyarısı */}
-        {kendiLinki && (
+        {!zatenDolduruldu && kendiLinki && (
           <div className="px-8 py-10 flex flex-col items-center text-center gap-5">
             <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center">
               <AlertCircle className="w-8 h-8 text-amber-500" />
@@ -184,7 +232,7 @@ export default function ReferansFormuSayfasi({
         )}
 
         {/* Üst banner */}
-        {!kendiLinki && <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-8 pt-8 pb-10">
+        {!zatenDolduruldu && !kendiLinki && <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-8 pt-8 pb-10">
           <div className="inline-flex items-center gap-1.5 bg-white/20 rounded-full px-3 py-1 text-xs text-white font-medium mb-4">
             <span className="w-1.5 h-1.5 bg-white rounded-full" />
             Kiracı Referans Formu
@@ -212,7 +260,22 @@ export default function ReferansFormuSayfasi({
         </div>}
 
         {/* Sorular */}
-        {!kendiLinki && <form onSubmit={gonder} className="px-8 py-8 space-y-8 -mt-4">
+        {!zatenDolduruldu && !kendiLinki && <form onSubmit={gonder} className="px-8 py-8 space-y-8 -mt-4">
+          {/* İsteğe bağlı: adınız */}
+          <div>
+            <label className="block text-sm font-bold text-gray-900 mb-1">
+              Adınız <span className="text-gray-400 font-normal">(isteğe bağlı)</span>
+            </label>
+            <input
+              type="text"
+              value={dolduranAdi}
+              onChange={(e) => setDolduranAdi(e.target.value)}
+              placeholder="Adınızı girebilirsiniz"
+              maxLength={100}
+              className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-indigo-300 focus:bg-white transition-all"
+            />
+          </div>
+
           {SORULAR.map((soru, idx) => (
             <div
               key={soru.alan}
@@ -275,6 +338,21 @@ export default function ReferansFormuSayfasi({
               </div>
             </div>
           ))}
+
+          {/* İsteğe bağlı: yorum */}
+          <div>
+            <label className="block text-sm font-bold text-gray-900 mb-1">
+              Eklemek istediğiniz bir şey var mı? <span className="text-gray-400 font-normal">(isteğe bağlı)</span>
+            </label>
+            <textarea
+              value={yorum}
+              onChange={(e) => setYorum(e.target.value.slice(0, 300))}
+              placeholder="Varsa ekstra yorumunuzu buraya yazabilirsiniz…"
+              rows={3}
+              className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-indigo-300 focus:bg-white transition-all resize-none"
+            />
+            <p className="text-right text-xs text-gray-400 mt-1">{yorum.length}/300</p>
+          </div>
 
           <button
             type="submit"

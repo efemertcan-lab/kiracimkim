@@ -1,0 +1,109 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Kullanici {
+  id        String   @id @default(cuid())
+  adSoyad   String   @map("ad_soyad")
+  email     String   @unique
+  sifreHash String   @map("sifre_hash")
+  telefon   String
+  rol       String   // "kiraci" | "evsahibi"
+  createdAt DateTime @default(now()) @map("created_at")
+
+  linkler             ReferansLinki[]
+  ozetToken           OzetToken?
+  kararlar            EvsahibiKarari[]
+  goruntulenenLinkler GoruntulenenLink[]
+
+  @@map("kullanicilar")
+}
+
+model ReferansLinki {
+  id          String   @id @default(cuid())
+  etiket      String
+  kullaniciId String   @map("kullanici_id")
+  evsahibiAdi   String?   @map("evsahibi_adi")
+  sehir         String?
+  kiraBaslangic DateTime? @map("kira_baslangic")
+  kiraBitis     DateTime? @map("kira_bitis")
+  olusturulma   DateTime  @default(now())
+
+  kullanici       Kullanici          @relation(fields: [kullaniciId], references: [id])
+  referanslar     ReferansFormu[]
+  raporToken      RaporToken?
+  kararlar        EvsahibiKarari[]
+  goruntulenenler GoruntulenenLink[]
+
+  @@map("referans_linkleri")
+}
+
+model ReferansFormu {
+  id           String   @id @default(cuid())
+  linkId       String   @map("link_id")
+  kiraOdemesi  Int      @map("kira_odemesi")
+  evDurumu     Int      @map("ev_durumu")
+  iletisim     Int
+  tasinma      Int
+  dolduranAdi  String?  @map("dolduran_adi")
+  yorum        String?
+  gonderilenAt DateTime @default(now()) @map("gonderilen_at")
+
+  link ReferansLinki @relation(fields: [linkId], references: [id])
+
+  @@map("referans_formlari")
+}
+
+model OzetToken {
+  token       String   @id
+  kullaniciId String   @unique @map("kullanici_id")
+  linkIdleri  String?  @map("link_idleri")
+  olusturulma DateTime @default(now())
+
+  kullanici Kullanici @relation(fields: [kullaniciId], references: [id])
+
+  @@map("ozet_tokenlar")
+}
+
+model RaporToken {
+  token       String   @id
+  linkId      String   @unique @map("link_id")
+  olusturulma DateTime @default(now())
+
+  link ReferansLinki @relation(fields: [linkId], references: [id])
+
+  @@map("rapor_tokenlar")
+}
+
+model EvsahibiKarari {
+  id          String   @id @default(cuid())
+  kullaniciId String   @map("kullanici_id")
+  linkId      String   @map("link_id")
+  karar       String   // "verir" | "vermez" | "kiralandı"
+  sebep       String?
+  tarih       DateTime @default(now())
+
+  kullanici Kullanici     @relation(fields: [kullaniciId], references: [id])
+  link      ReferansLinki @relation(fields: [linkId], references: [id])
+
+  @@unique([kullaniciId, linkId])
+  @@map("evsahibi_kararlari")
+}
+
+model GoruntulenenLink {
+  id                 String   @id @default(cuid())
+  kullaniciId        String   @map("kullanici_id")
+  linkId             String   @map("link_id")
+  goruntulenmeTarihi DateTime @default(now()) @map("goruntulme_tarihi")
+  referansGonderildi Boolean  @default(false) @map("referans_gonderildi")
+
+  kullanici Kullanici     @relation(fields: [kullaniciId], references: [id])
+  link      ReferansLinki @relation(fields: [linkId], references: [id])
+
+  @@unique([kullaniciId, linkId])
+  @@map("goruntulenen_linkler")
+}

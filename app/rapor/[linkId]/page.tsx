@@ -14,17 +14,22 @@ import {
   ShieldAlert,
   ShieldX,
   Shield,
+  Calendar,
 } from "lucide-react";
-import {
-  linkReferanslari,
-  riskHesapla,
-  riskBilgisi,
-  linkSahibiKim,
-  oturumuGetir,
-  raporTokenOlustur,
-  type ReferansFormu,
-  type RiskSeviyesi,
-} from "@/lib/store";
+import { riskHesapla, riskBilgisi, type ReferansFormu, type RiskSeviyesi } from "@/lib/store";
+
+const AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+
+function kiraDonemi(bas?: string | null, bitis?: string | null): string | null {
+  if (!bas && !bitis) return null;
+  const fmt = (iso: string) => {
+    const d = new Date(iso);
+    return `${AYLAR[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  };
+  if (bas && bitis) return `${fmt(bas)} – ${fmt(bitis)}`;
+  if (bas) return `${fmt(bas)} –`;
+  return `– ${fmt(bitis!)}`;
+}
 
 function RiskIkonu({ seviye }: { seviye: RiskSeviyesi | null }) {
   if (seviye === "dusuk")  return <ShieldCheck className="w-8 h-8" />;
@@ -47,27 +52,47 @@ export default function RaporSayfasi({
   const [kopyalandi, setKopyalandi] = useState(false);
   const [mounted, setMounted]       = useState(false);
   const [yetkisiz, setYetkisiz]     = useState(false);
+  const [linkMeta, setLinkMeta]     = useState<{ kiraBaslangic?: string | null; kiraBitis?: string | null } | null>(null);
 
   useEffect(() => {
-    const oturum = oturumuGetir();
-    if (!oturum || oturum.rol !== "kiraci") {
-      router.replace("/giris");
-      return;
-    }
-    const sahip = linkSahibiKim(linkId);
-    if (sahip && sahip !== oturum.kullaniciId) {
-      setYetkisiz(true);
+    async function yukle() {
+      // 1. Oturum kontrolü
+      const oturumRes = await fetch("/api/auth/oturum");
+      const oturum = await oturumRes.json();
+      if (!oturum || oturum.rol !== "kiraci") {
+        router.replace("/giris");
+        return;
+      }
+
+      // 2. Link sahiplik kontrolü
+      const gecerliRes = await fetch(`/api/linkler/gecerli?id=${linkId}`);
+      const gecerli = await gecerliRes.json();
+      if (gecerli.gecerli && gecerli.kullaniciId && gecerli.kullaniciId !== oturum.id) {
+        setYetkisiz(true);
+        setMounted(true);
+        return;
+      }
+      if (gecerli.gecerli) {
+        setLinkMeta({ kiraBaslangic: gecerli.kiraBaslangic, kiraBitis: gecerli.kiraBitis });
+      }
+
+      // 3. Referansları çek
+      const refsRes = await fetch(`/api/referanslar?linkId=${linkId}`);
+      if (refsRes.ok) {
+        const veriler: ReferansFormu[] = await refsRes.json();
+        setRefs(veriler);
+        setRisk(riskHesapla(veriler));
+      }
+
       setMounted(true);
-      return;
     }
-    const veriler = linkReferanslari(linkId);
-    setRefs(veriler);
-    setRisk(riskHesapla(veriler));
-    setMounted(true);
+    yukle();
   }, [linkId, router]);
 
-  function paylasLinkOlustur() {
-    const token = raporTokenOlustur(linkId);
+  async function paylasLinkOlustur() {
+    const res = await fetch(`/api/rapor-token?linkId=${linkId}`);
+    if (!res.ok) return;
+    const { token } = await res.json();
     const url = `${window.location.origin}/rapor-paylas/${token}`;
     setPaylasLink(url);
     navigator.clipboard.writeText(url);
@@ -140,6 +165,12 @@ export default function RaporSayfasi({
                 </span>
               </div>
               <p className="text-sm text-gray-600 leading-relaxed">{bilgi.aciklama}</p>
+              {(linkMeta?.kiraBaslangic || linkMeta?.kiraBitis) && (
+                <div className="flex items-center gap-1.5 mt-2 text-xs text-gray-500">
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>{kiraDonemi(linkMeta.kiraBaslangic, linkMeta.kiraBitis)}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

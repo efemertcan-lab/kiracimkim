@@ -35,3 +35,6 @@ tsconfig.tsbuildinfo
 
 # claude
 .claude/
+
+# nested project (accidentally placed here)
+/kiracimkim/

@@ -39,7 +39,8 @@ export async function POST(req: NextRequest) {
     await oturumOlustur({ id: kullanici.id, adSoyad: kullanici.adSoyad, email: kullanici.email, rol: kullanici.rol as "kiraci" | "evsahibi" });
 
     return NextResponse.json({ basarili: true });
-  } catch {
+  } catch (err) {
+    console.error("[kayit] hata:", err);
     return NextResponse.json({ basarili: false, hata: "Kayıt sırasında bir hata oluştu." }, { status: 500 });
   }
 }

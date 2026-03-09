@@ -260,12 +260,7 @@ export default function DashboardPage() {
                               <span className="text-slate-300 font-normal">{link.sehir}</span>
                             </>
                           )}
-                          {refSayisi > 0 ? (
-                            <span className="inline-flex items-center gap-1 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                              Yanıt Geldi · {refSayisi}
-                            </span>
-                          ) : (
+                          {refSayisi === 0 && (
                             <span className="inline-flex items-center gap-1 bg-amber-500/15 border border-amber-500/25 text-amber-400 text-[11px] font-semibold px-2 py-0.5 rounded-full">
                               <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                               Beklemede
@@ -370,15 +365,12 @@ export default function DashboardPage() {
                     {silinecekId !== link.id && (
                       <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
 
-                        {/* Sonraki adım ipucu */}
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[11px] font-semibold text-slate-500 flex-shrink-0">Sonraki adım:</span>
-                          <span className={`text-[11px] ${refSayisi > 0 ? "text-emerald-400" : "text-amber-400/80"}`}>
-                            {refSayisi > 0
-                              ? "Eski ev sahibinden yanıt alındı, raporu yeni ev sahibinle paylaşabilirsin."
-                              : "Bu linki eski ev sahibinle paylaş"}
-                          </span>
-                        </div>
+                        {/* Durum açıklaması */}
+                        <p className={`text-[11px] ${refSayisi > 0 ? "text-emerald-400" : "text-amber-400/80"}`}>
+                          {refSayisi > 0
+                            ? "Eski ev sahibinden yanıt alındı, raporu yeni ev sahibinle paylaşabilirsin."
+                            : "Bu linki eski ev sahibinle paylaş"}
+                        </p>
 
                         {/* Birincil CTA — sadece referans varsa Rapor butonu */}
                         {refSayisi > 0 && (

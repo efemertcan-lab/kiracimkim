@@ -381,9 +381,9 @@ export default function EvsahibiDashboard() {
         />
       </div>
 
-      <div className="relative max-w-4xl mx-auto px-4 sm:px-6 py-8">
+      <div className="relative max-w-4xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
         {/* ── Header ── */}
-        <header className="flex items-center justify-between mb-10">
+        <header className="flex items-center justify-between mb-6 sm:mb-10">
           <Link href="/" className="flex items-center gap-2 group">
             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/30 group-hover:bg-indigo-500 transition-colors">
               <Home className="w-4 h-4 text-white" />
@@ -410,7 +410,7 @@ export default function EvsahibiDashboard() {
         </header>
 
         {/* ── Hoş geldin ── */}
-        <div className="mb-8">
+        <div className="mb-5 sm:mb-8">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
             Ev Sahibi Paneli 🏠
           </h1>
@@ -420,22 +420,22 @@ export default function EvsahibiDashboard() {
         </div>
 
         {/* ── Link görüntüleme alanı ── */}
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-6">
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-4 sm:p-6 mb-6">
           <label className="block text-sm font-semibold text-slate-300 mb-3">
             Referans Linki Yapıştır
           </label>
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             <input
               type="text"
               value={girdi}
               onChange={(e) => { setGirdi(e.target.value); setHata(null); }}
               onKeyDown={(e) => e.key === "Enter" && goruntule()}
               placeholder="https://…/referans/abc123 veya sadece link ID'si"
-              className="flex-1 bg-white/5 border border-white/10 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none transition-all"
+              className="flex-1 min-w-0 bg-white/5 border border-white/10 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none transition-all"
             />
             <button
               onClick={goruntule}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-5 py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:-translate-y-0.5 flex-shrink-0"
+              className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-5 py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 sm:hover:-translate-y-0.5 w-full sm:w-auto flex-shrink-0"
             >
               <Search className="w-4 h-4" />
               Görüntüle
@@ -497,7 +497,7 @@ export default function EvsahibiDashboard() {
                   <p className="text-slate-600 text-xs mb-4">
                     Bu karar yalnızca sizin panelinizde görünür, kiracıyla paylaşılmaz. İstediğiniz zaman değiştirebilirsiniz.
                   </p>
-                  <div className="flex gap-3">
+                  <div className="flex flex-wrap gap-3">
                     <KararButonu
                       aktif={kararlar[sonuc.linkId] === "verir"}
                       onKarar={(k) => karar(sonuc.linkId, k)}
@@ -559,7 +559,7 @@ export default function EvsahibiDashboard() {
               <p className="text-slate-600 text-xs mb-4">
                 Bu karar yalnızca sizin panelinizde görünür, kiracıyla paylaşılmaz. İstediğiniz zaman değiştirebilirsiniz.
               </p>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 <KararButonu
                   aktif={kararlar["ozet_" + ozetSonuc.kullaniciId] === "verir"}
                   onKarar={(k) => karar("ozet_" + ozetSonuc.kullaniciId, k)}
@@ -608,10 +608,10 @@ export default function EvsahibiDashboard() {
             const reddedilenler = goruntulenenler.filter((g) => kararlar[g.linkId] === "vermez");
             const tamamlananlar = goruntulenenler.filter((g) => kararlar[g.linkId] === "kiralandı");
             const sekmeler = [
-              { id: "bekleyen"   as const, etiket: "Bekleyenler",    count: bekleyenler.length,   dotRenk: "bg-amber-400" },
-              { id: "verir"      as const, etiket: "Kirayı Veririm", count: verilenler.length,    dotRenk: "bg-emerald-400" },
-              { id: "vermez"     as const, etiket: "Vermem",         count: reddedilenler.length, dotRenk: "bg-red-400" },
-              { id: "tamamlandi" as const, etiket: "Tamamlandı",     count: tamamlananlar.length, dotRenk: "bg-indigo-400" },
+              { id: "bekleyen"   as const, etiket: "Bekleyenler",    kisa: "Bekleyen",  count: bekleyenler.length,   dotRenk: "bg-amber-400" },
+              { id: "verir"      as const, etiket: "Kirayı Veririm", kisa: "Veririm",   count: verilenler.length,    dotRenk: "bg-emerald-400" },
+              { id: "vermez"     as const, etiket: "Vermem",         kisa: "Vermem",    count: reddedilenler.length, dotRenk: "bg-red-400" },
+              { id: "tamamlandi" as const, etiket: "Tamamlandı",     kisa: "Tamam",     count: tamamlananlar.length, dotRenk: "bg-indigo-400" },
             ];
             const aktifItems =
               aktifSekme === "bekleyen"   ? bekleyenler   :
@@ -634,16 +634,16 @@ export default function EvsahibiDashboard() {
                     <button
                       key={sekme.id}
                       onClick={() => setAktifSekme(sekme.id)}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold transition-all ${
+                      className={`flex-1 flex items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-xs font-semibold transition-all min-w-0 ${
                         aktifSekme === sekme.id
                           ? "bg-white/10 text-white"
                           : "text-slate-400 hover:text-slate-200"
                       }`}
                     >
                       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${sekme.dotRenk} ${aktifSekme === sekme.id ? "opacity-100" : "opacity-50"}`} />
-                      <span className="hidden sm:inline">{sekme.etiket}</span>
-                      <span className="sm:hidden">{sekme.etiket.split(" ")[0]}</span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
+                      <span className="hidden sm:inline truncate">{sekme.etiket}</span>
+                      <span className="sm:hidden truncate">{sekme.kisa}</span>
+                      <span className={`text-[10px] px-1 py-0.5 rounded-full font-bold flex-shrink-0 ${
                         aktifSekme === sekme.id ? "bg-white/15 text-white" : "bg-white/5 text-slate-500"
                       }`}>
                         {sekme.count}
@@ -844,12 +844,12 @@ function GecmisKarti({
 
   return (
     <>
-      <div className={`border rounded-2xl p-5 transition-all ${
+      <div className={`border rounded-2xl p-4 sm:p-5 transition-all ${
         tamamlandi
           ? "bg-emerald-500/5 border-emerald-500/20 hover:border-emerald-500/30"
           : "bg-white/5 border-white/10 hover:border-white/20"
       }`}>
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1.5">
               <button

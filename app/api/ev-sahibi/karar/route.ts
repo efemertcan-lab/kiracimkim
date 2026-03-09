@@ -40,3 +40,21 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
+
+export async function DELETE(req: NextRequest) {
+  const oturum = await oturumGetir();
+  if (!oturum) return NextResponse.json({ hata: "Oturum gerekli" }, { status: 401 });
+
+  const linkId = new URL(req.url).searchParams.get("linkId");
+  if (!linkId) return NextResponse.json({ hata: "linkId gerekli" }, { status: 400 });
+
+  try {
+    await prisma.evsahibiKarari.delete({
+      where: { kullaniciId_linkId: { kullaniciId: oturum.id, linkId } },
+    });
+  } catch {
+    // Kayıt yoksa sorun değil
+  }
+
+  return NextResponse.json({ ok: true });
+}

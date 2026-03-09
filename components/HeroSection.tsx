@@ -1,5 +1,13 @@
 import Link from "next/link";
-import { ArrowRight, Star, CheckCircle } from "lucide-react";
+import { ArrowRight, Star, CheckCircle, ShieldCheck } from "lucide-react";
+
+const mockKategoriler = [
+  { emoji: "💰", baslik: "Kira Ödemesi", sayilar: [3, 1, 0] },
+  { emoji: "🏠", baslik: "Ev Durumu",    sayilar: [4, 0, 0] },
+  { emoji: "📞", baslik: "İletişim",     sayilar: [3, 1, 0] },
+  { emoji: "📦", baslik: "Taşınma",      sayilar: [4, 0, 0] },
+];
+const barRenkler = ["bg-emerald-500", "bg-amber-400", "bg-red-500"];
 
 export default function HeroSection() {
   return (
@@ -76,48 +84,62 @@ export default function HeroSection() {
         {/* Hero card mockup */}
         <div className="mt-16 max-w-2xl mx-auto">
           <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 text-left shadow-2xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-indigo-500/20 rounded-full flex items-center justify-center text-xl">
-                👤
+
+            {/* Kiracı başlığı */}
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 bg-indigo-500/30 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                AY
               </div>
-              <div>
-                <div className="text-white font-semibold">Ahmet Yılmaz</div>
-                <div className="text-slate-400 text-sm">kiracimkim.com/ahmet-y</div>
+              <div className="min-w-0">
+                <div className="text-white font-semibold leading-tight">Ahmet Yılmaz</div>
+                <div className="text-slate-400 text-xs truncate">kiracimkim.com/ahmet-y</div>
               </div>
-              <div className="ml-auto flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-3 py-1">
-                <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
-                <span className="text-emerald-400 text-xs font-medium">Doğrulanmış</span>
+              <div className="ml-auto flex items-center gap-1.5 bg-emerald-500/15 border border-emerald-500/25 rounded-full px-3 py-1 flex-shrink-0">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-emerald-400 text-xs font-semibold">Düşük Risk</span>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { label: "Referans", value: "4" },
-                { label: "Yıl Kira", value: "6" },
-                { label: "Puan", value: "4.9" },
-              ].map((stat) => (
-                <div key={stat.label} className="bg-white/5 rounded-xl p-3 text-center">
-                  <div className="text-white font-bold text-xl">{stat.value}</div>
-                  <div className="text-slate-400 text-xs">{stat.label}</div>
-                </div>
-              ))}
+
+            {/* Risk özeti */}
+            <div className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 mb-5">
+              <ShieldCheck className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+              <div className="min-w-0">
+                <div className="text-emerald-300 text-sm font-semibold leading-tight">Düşük Risk · 4 Referans</div>
+                <div className="text-emerald-400/70 text-xs mt-0.5">Ödemeleri zamanında yapmış, evi iyi durumda teslim etmiş.</div>
+              </div>
             </div>
-            <div className="mt-4 space-y-2">
-              {[
-                { name: "Mehmet Bey", role: "Eski Ev Sahibi", comment: "Ahmet Bey 3 yıl boyunca hiçbir sorun çıkarmadı. Kesinlikle tavsiye ederim." },
-                { name: "Fatma Hanım", role: "Eski Ev Sahibi", comment: "Kirayı her ay zamanında ödedi, evi tertemiz teslim etti." },
-              ].map((ref) => (
-                <div key={ref.name} className="bg-white/5 rounded-lg p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="w-6 h-6 bg-indigo-500/30 rounded-full flex items-center justify-center text-xs">
-                      {ref.name[0]}
+
+            {/* Kategori dağılımı */}
+            <div className="bg-white/5 rounded-xl p-4">
+              <div className="text-xs font-semibold text-slate-300 mb-4 uppercase tracking-wide">Kategori Dağılımı</div>
+              <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+                {mockKategoriler.map((kat) => {
+                  const toplam = kat.sayilar.reduce((a, b) => a + b, 0);
+                  return (
+                    <div key={kat.baslik}>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="text-sm leading-none">{kat.emoji}</span>
+                        <span className="text-xs font-medium text-slate-300">{kat.baslik}</span>
+                      </div>
+                      <div className="space-y-1">
+                        {kat.sayilar.map((sayi, i) => (
+                          <div key={i} className="flex items-center gap-1.5">
+                            <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full ${barRenkler[i]} rounded-full`}
+                                style={{ width: toplam > 0 ? `${Math.round((sayi / toplam) * 100)}%` : "0%" }}
+                              />
+                            </div>
+                            <span className="text-[10px] text-slate-500 w-2.5 text-right">{sayi}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <span className="text-white text-xs font-medium">{ref.name}</span>
-                    <span className="text-slate-500 text-xs">· {ref.role}</span>
-                  </div>
-                  <p className="text-slate-400 text-xs leading-relaxed">{ref.comment}</p>
-                </div>
-              ))}
+                  );
+                })}
+              </div>
             </div>
+
           </div>
         </div>
       </div>

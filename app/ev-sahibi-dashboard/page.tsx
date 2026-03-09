@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -29,6 +29,9 @@ import {
   Trash2,
   MessageSquare,
   Info,
+  ArrowLeft,
+  Eye,
+  MoreHorizontal,
 } from "lucide-react";
 import {
   riskHesapla,
@@ -315,6 +318,15 @@ export default function EvsahibiDashboard() {
     await yenile();
   }
 
+  async function kararGeriAl(linkId: string) {
+    setKararlar((prev) => {
+      const next = { ...prev };
+      delete next[linkId];
+      return next as Record<string, "verir" | "vermez" | "kiralandı">;
+    });
+    await fetch(`/api/ev-sahibi/karar?linkId=${encodeURIComponent(linkId)}`, { method: "DELETE" });
+  }
+
   async function karar(linkId: string, k: "verir" | "vermez" | "kiralandı", sebep?: string) {
     // Anında görsel güncelleme
     setKararlar((prev) => ({ ...prev, [linkId]: k }));
@@ -460,8 +472,8 @@ export default function EvsahibiDashboard() {
                 onClick={() => setSonuc(null)}
                 className="flex items-center gap-1.5 text-slate-400 hover:text-white text-xs font-semibold border border-white/10 hover:border-white/25 rounded-lg px-3 py-1.5 transition-colors flex-shrink-0 mt-0.5"
               >
-                <X className="w-3.5 h-3.5" />
-                Kapat
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Listeye Dön
               </button>
             </div>
 
@@ -479,26 +491,31 @@ export default function EvsahibiDashboard() {
               <>
                 <ReferansSonuclari sonuc={sonuc} />
                 <div className="mt-4 bg-white/5 border border-white/10 rounded-2xl p-6">
-                  <p className="text-slate-300 text-sm font-semibold mb-4">
+                  <p className="text-slate-300 text-sm font-semibold mb-1">
                     Bu kiracı hakkında kararınız:
+                  </p>
+                  <p className="text-slate-600 text-xs mb-4">
+                    Bu karar yalnızca sizin panelinizde görünür, kiracıyla paylaşılmaz. İstediğiniz zaman değiştirebilirsiniz.
                   </p>
                   <div className="flex gap-3">
                     <KararButonu
                       aktif={kararlar[sonuc.linkId] === "verir"}
-                      tip="verir"
-                      kiraci={sonuc.kiraci}
-                      linkId={sonuc.linkId}
                       onKarar={(k) => karar(sonuc.linkId, k)}
+                      onGeriAl={() => kararGeriAl(sonuc.linkId)}
                     />
                     <button
-                      onClick={() => karar(sonuc.linkId, "vermez")}
-                      className={`flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-xl border-2 transition-all ${
+                      onClick={() =>
                         kararlar[sonuc.linkId] === "vermez"
-                          ? "bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/30"
-                          : "border-white/10 text-slate-400 hover:border-red-500/50 hover:text-red-400 hover:bg-red-500/10"
+                          ? kararGeriAl(sonuc.linkId)
+                          : karar(sonuc.linkId, "vermez")
+                      }
+                      className={`flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-lg border transition-all ${
+                        kararlar[sonuc.linkId] === "vermez"
+                          ? "bg-red-500/20 border-red-500/50 text-red-400"
+                          : "border-white/10 text-slate-500 hover:border-red-500/30 hover:text-red-400/70"
                       }`}
                     >
-                      <XCircle className="w-4 h-4" />
+                      <XCircle className="w-3.5 h-3.5" />
                       Vermem
                     </button>
                   </div>
@@ -528,31 +545,36 @@ export default function EvsahibiDashboard() {
                 onClick={() => setOzetSonuc(null)}
                 className="flex items-center gap-1.5 text-slate-400 hover:text-white text-xs font-semibold border border-white/10 hover:border-white/25 rounded-lg px-3 py-1.5 transition-colors flex-shrink-0 mt-0.5"
               >
-                <X className="w-3.5 h-3.5" />
-                Kapat
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Listeye Dön
               </button>
             </div>
             <OzetSonuclari ozetSonuc={ozetSonuc} />
 
             {/* Karar bölümü */}
             <div className="mt-6 bg-white/5 border border-white/10 rounded-2xl p-6">
-              <p className="text-slate-300 text-sm font-semibold mb-4">
+              <p className="text-slate-300 text-sm font-semibold mb-1">
                 Bu kiracı hakkında kararınız:
+              </p>
+              <p className="text-slate-600 text-xs mb-4">
+                Bu karar yalnızca sizin panelinizde görünür, kiracıyla paylaşılmaz. İstediğiniz zaman değiştirebilirsiniz.
               </p>
               <div className="flex gap-3">
                 <KararButonu
                   aktif={kararlar["ozet_" + ozetSonuc.kullaniciId] === "verir"}
-                  tip="verir"
-                  kiraci={ozetSonuc.kiraci}
-                  linkId={"ozet_" + ozetSonuc.kullaniciId}
                   onKarar={(k) => karar("ozet_" + ozetSonuc.kullaniciId, k)}
+                  onGeriAl={() => kararGeriAl("ozet_" + ozetSonuc.kullaniciId)}
                 />
                 <button
-                  onClick={() => karar("ozet_" + ozetSonuc.kullaniciId, "vermez")}
-                  className={`flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-xl border-2 transition-all ${
+                  onClick={() =>
                     kararlar["ozet_" + ozetSonuc.kullaniciId] === "vermez"
-                      ? "bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/30"
-                      : "border-white/10 text-slate-400 hover:border-red-500/50 hover:text-red-400 hover:bg-red-500/10"
+                      ? kararGeriAl("ozet_" + ozetSonuc.kullaniciId)
+                      : karar("ozet_" + ozetSonuc.kullaniciId, "vermez")
+                  }
+                  className={`flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-lg border transition-all ${
+                    kararlar["ozet_" + ozetSonuc.kullaniciId] === "vermez"
+                      ? "bg-red-500/20 border-red-500/50 text-red-400"
+                      : "border-white/10 text-slate-500 hover:border-red-500/30 hover:text-red-400/70"
                   }`}
                 >
                   <XCircle className="w-4 h-4" />
@@ -645,6 +667,7 @@ export default function EvsahibiDashboard() {
                         karar={kararlar[item.linkId]}
                         sebep={sebepler[item.linkId]}
                         onKarar={(k, s) => karar(item.linkId, k, s)}
+                        onGeriAl={() => kararGeriAl(item.linkId)}
                         onSil={() => gecmisKaydiSil(item.linkId)}
                         onGoruntule={() => {
                           setOzetSonuc(null);
@@ -679,44 +702,25 @@ export default function EvsahibiDashboard() {
 
 function KararButonu({
   aktif,
-  kiraci,
-  linkId,
   onKarar,
+  onGeriAl,
 }: {
   aktif: boolean;
-  tip: "verir";
-  kiraci: KiraciInfo | null;
-  linkId: string;
-  onKarar: (k: "verir" | "vermez") => void;
+  onKarar: (k: "verir") => void;
+  onGeriAl: () => void;
 }) {
-  const [modalAcik, setModalAcik] = useState(false);
-
-  function kiriyaVer() {
-    onKarar("verir");
-    setModalAcik(true);
-  }
-
   return (
-    <>
-      <button
-        onClick={kiriyaVer}
-        className={`flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-xl border-2 transition-all ${
-          aktif
-            ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/30"
-            : "border-white/10 text-slate-400 hover:border-emerald-500/50 hover:text-emerald-400 hover:bg-emerald-500/10"
-        }`}
-      >
-        <CheckCircle2 className="w-4 h-4" />
-        Kirayı Veririm
-      </button>
-      {modalAcik && (
-        <KiraciModal
-          kiraci={kiraci}
-          linkId={linkId}
-          onKapat={() => setModalAcik(false)}
-        />
-      )}
-    </>
+    <button
+      onClick={() => (aktif ? onGeriAl() : onKarar("verir"))}
+      className={`flex items-center gap-2 text-sm font-bold px-6 py-3 rounded-xl border-2 transition-all ${
+        aktif
+          ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/30"
+          : "bg-emerald-600/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30 hover:border-emerald-400 hover:text-emerald-300"
+      }`}
+    >
+      <CheckCircle2 className="w-4 h-4" />
+      Kirayı Veririm
+    </button>
   );
 }
 
@@ -807,6 +811,7 @@ function GecmisKarti({
   karar,
   sebep,
   onKarar,
+  onGeriAl,
   onSil,
   onGoruntule,
 }: {
@@ -814,26 +819,28 @@ function GecmisKarti({
   karar: "verir" | "vermez" | "kiralandı" | undefined;
   sebep?: string;
   onKarar: (k: "verir" | "vermez" | "kiralandı", sebep?: string) => void;
+  onGeriAl: () => void;
   onSil: () => void;
   onGoruntule: () => void;
 }) {
-  const [kiraciModalAcik, setKiraciModalAcik] = useState(false);
   const [detayModalAcik, setDetayModalAcik] = useState(false);
-  const [vermezModalAcik, setVermezModalAcik] = useState(false);
-  const [kiraci, setKiraci] = useState<KiraciInfo | null>(null);
+  const [menuAcik, setMenuAcik] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const risk = riskHesapla(item.refs);
   const riskInfo = riskBilgisi(risk);
 
-  async function kiriyaVer() {
-    onKarar("verir");
-    if (item.kiraciId) {
-      const res = await fetch(`/api/kullanici?id=${item.kiraciId}`);
-      if (res.ok) setKiraci(await res.json());
-    }
-    setKiraciModalAcik(true);
-  }
-
   const tamamlandi = karar === "kiralandı";
+
+  useEffect(() => {
+    if (!menuAcik) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuAcik(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuAcik]);
 
   return (
     <>
@@ -885,81 +892,48 @@ function GecmisKarti({
             )}
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
-            {/* Detayı Gör butonu — hep görünür */}
-            {item.refs.length > 0 && (
-              <button
-                onClick={() => setDetayModalAcik(true)}
-                title="Referans detaylarını gör"
-                className="flex items-center gap-1 text-xs font-semibold px-3 py-2 rounded-xl border border-white/10 text-slate-400 hover:text-indigo-300 hover:border-indigo-400/30 hover:bg-indigo-500/10 transition-all"
-              >
-                <Info className="w-3.5 h-3.5" />
-                Detayı Gör
-              </button>
-            )}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Ana aksiyon: Raporu Görüntüle */}
+            <button
+              onClick={onGoruntule}
+              className="flex items-center gap-1.5 text-xs font-bold px-4 py-2.5 rounded-xl border-2 border-indigo-500/50 bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 hover:border-indigo-400/70 hover:text-indigo-200 transition-all"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              Raporu Görüntüle
+            </button>
 
-            {tamamlandi ? (
-              /* Tamamlandı sekmesi: sadece sil butonu */
+            {/* Overflow menü */}
+            <div className="relative" ref={menuRef}>
               <button
-                onClick={onSil}
-                title="Geçmişten sil"
-                className="flex items-center justify-center w-8 h-8 rounded-xl border border-white/10 text-slate-600 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 transition-all"
+                onClick={() => setMenuAcik((prev) => !prev)}
+                className="flex items-center justify-center w-9 h-9 rounded-xl border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-all"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <MoreHorizontal className="w-4 h-4" />
               </button>
-            ) : (
-              <>
-                <button
-                  onClick={kiriyaVer}
-                  className={`flex items-center gap-1.5 text-xs font-bold px-4 py-2.5 rounded-xl border-2 transition-all ${
-                    karar === "verir"
-                      ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/30"
-                      : "border-white/10 text-slate-400 hover:border-emerald-500/50 hover:text-emerald-400 hover:bg-emerald-500/10"
-                  }`}
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Kirayı Veririm
-                </button>
-                {karar === "verir" && (
+              {menuAcik && (
+                <div className="absolute right-0 top-full mt-1.5 w-48 bg-[#1a1f2e] border border-white/10 rounded-xl shadow-xl z-20 overflow-hidden">
+                  {item.kiraciId && (
+                    <button
+                      onClick={() => { setDetayModalAcik(true); setMenuAcik(false); }}
+                      className="flex items-center gap-2.5 w-full px-4 py-3 text-xs font-semibold text-slate-300 hover:bg-white/5 hover:text-white transition-colors"
+                    >
+                      <Info className="w-3.5 h-3.5 flex-shrink-0" />
+                      Kiracı Detayını Gör
+                    </button>
+                  )}
                   <button
-                    onClick={() => onKarar("kiralandı")}
-                    className="flex items-center gap-1.5 text-xs font-bold px-4 py-2.5 rounded-xl border-2 border-indigo-500/40 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 hover:border-indigo-400/60 transition-all"
+                    onClick={() => { onSil(); setMenuAcik(false); }}
+                    className="flex items-center gap-2.5 w-full px-4 py-3 text-xs font-semibold text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors"
                   >
-                    <Check className="w-3.5 h-3.5" />
-                    Kiraladım
+                    <Trash2 className="w-3.5 h-3.5 flex-shrink-0" />
+                    Kaydı Sil
                   </button>
-                )}
-                <button
-                  onClick={() => setVermezModalAcik(true)}
-                  className={`flex items-center gap-1.5 text-xs font-bold px-4 py-2.5 rounded-xl border-2 transition-all ${
-                    karar === "vermez"
-                      ? "bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/30"
-                      : "border-white/10 text-slate-400 hover:border-red-500/50 hover:text-red-400 hover:bg-red-500/10"
-                  }`}
-                >
-                  <XCircle className="w-3.5 h-3.5" />
-                  Vermem
-                </button>
-                <button
-                  onClick={onSil}
-                  title="Geçmişten sil"
-                  className="flex items-center justify-center w-8 h-8 rounded-xl border border-white/10 text-slate-600 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 transition-all"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </>
-            )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
-
-      {kiraciModalAcik && (
-        <KiraciModal
-          kiraci={kiraci}
-          linkId={item.linkId}
-          onKapat={() => setKiraciModalAcik(false)}
-        />
-      )}
 
       {detayModalAcik && (
         <DetayModal
@@ -968,15 +942,6 @@ function GecmisKarti({
         />
       )}
 
-      {vermezModalAcik && (
-        <VermezSebebiModal
-          onSec={(s) => {
-            setVermezModalAcik(false);
-            onKarar("vermez", s);
-          }}
-          onKapat={() => setVermezModalAcik(false)}
-        />
-      )}
     </>
   );
 }
@@ -1129,6 +1094,20 @@ function DetayModal({
   item: GecmisItem;
   onKapat: () => void;
 }) {
+  const [kiraci, setKiraci] = useState<KiraciInfo | null>(null);
+  const [yukleniyor, setYukleniyor] = useState(true);
+
+  useEffect(() => {
+    async function yukle() {
+      if (item.kiraciId) {
+        const res = await fetch(`/api/kullanici?id=${item.kiraciId}`);
+        if (res.ok) setKiraci(await res.json());
+      }
+      setYukleniyor(false);
+    }
+    yukle();
+  }, [item.kiraciId]);
+
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") onKapat();
@@ -1137,8 +1116,6 @@ function DetayModal({
     return () => document.removeEventListener("keydown", handleKey);
   }, [onKapat]);
 
-  const donemi = kiraDonemiEs(item.kiraBaslangic, item.kiraBitis);
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center px-4"
@@ -1146,21 +1123,14 @@ function DetayModal({
     >
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
-        className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl shadow-black/40 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
-        style={{ maxHeight: "85vh" }}
+        className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl shadow-black/40 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-gray-100">
           <div>
-            <h2 className="text-base font-extrabold text-gray-900">Referans Detayları</h2>
+            <h2 className="text-base font-extrabold text-gray-900">İletişim Bilgileri</h2>
             <p className="text-sm text-gray-500 mt-0.5">{item.kiraciAdSoyad}</p>
-            {donemi && (
-              <div className="flex items-center gap-1.5 text-xs text-gray-400 mt-1">
-                <Calendar className="w-3.5 h-3.5" />
-                {donemi}
-              </div>
-            )}
           </div>
           <button
             onClick={onKapat}
@@ -1171,57 +1141,53 @@ function DetayModal({
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto px-6 py-4 space-y-4" style={{ maxHeight: "calc(85vh - 160px)" }}>
-          {item.refs.length === 0 ? (
-            <p className="text-center text-gray-400 text-sm py-8">Henüz referans formu doldurulmamış.</p>
+        <div className="px-6 py-5">
+          {yukleniyor ? (
+            <p className="text-center text-gray-400 text-sm py-6">Yükleniyor…</p>
+          ) : !kiraci ? (
+            <p className="text-center text-gray-400 text-sm py-6">İletişim bilgisi bulunamadı.</p>
           ) : (
-            item.refs.map((ref, idx) => (
-              <div key={idx} className="bg-gray-50 border border-gray-100 rounded-xl p-4">
-                {/* Kim doldurdu + tarih */}
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">
-                      {ref.dolduranAdi || "Anonim"}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {new Date(ref.gonderilenAt).toLocaleDateString("tr-TR", {
-                        day: "numeric",
-                        month: "long",
-                        year: "numeric",
-                      })}
-                    </p>
-                  </div>
-                  <span className="text-xs text-gray-300 font-mono">{idx + 1}/{item.refs.length}</span>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <User className="w-4 h-4 text-indigo-600" />
                 </div>
-
-                {/* Kategori skorları */}
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                  {(["kiraOdemesi", "evDurumu", "iletisim", "tasinma"] as const).map((alan) => {
-                    const val = ref[alan] as 0 | 1 | 2;
-                    const renk = DETAY_KATEGORI_RENK[val];
-                    return (
-                      <div key={alan} className={`rounded-lg px-3 py-2 ${renk.bg} border ${renk.border}`}>
-                        <p className="text-xs text-gray-400 mb-0.5">{DETAY_KATEGORI_ISIMLER[alan]}</p>
-                        <p className={`text-xs font-semibold ${renk.text}`}>
-                          {DETAY_KATEGORI_ETIKETLER[alan][val]}
-                        </p>
-                      </div>
-                    );
-                  })}
+                <div className="min-w-0">
+                  <p className="text-[11px] text-gray-400 font-medium">Ad Soyad</p>
+                  <p className="text-sm font-semibold text-gray-900 truncate">{kiraci.adSoyad}</p>
                 </div>
-
-                {/* Yorum */}
-                {ref.yorum && (
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
-                    <p className="flex items-center gap-1 text-xs font-semibold text-indigo-500 mb-1">
-                      <MessageSquare className="w-3 h-3" />
-                      Yorum
-                    </p>
-                    <p className="text-sm text-indigo-800 leading-relaxed">{ref.yorum}</p>
-                  </div>
-                )}
               </div>
-            ))
+              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Phone className="w-4 h-4 text-indigo-600" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] text-gray-400 font-medium">Telefon</p>
+                  {kiraci.telefon ? (
+                    <a href={`tel:${kiraci.telefon}`} className="text-sm font-semibold text-gray-900 hover:text-indigo-600 transition-colors">
+                      {kiraci.telefon}
+                    </a>
+                  ) : (
+                    <p className="text-sm text-gray-400">—</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Mail className="w-4 h-4 text-indigo-600" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] text-gray-400 font-medium">E-posta</p>
+                  {kiraci.email ? (
+                    <a href={`mailto:${kiraci.email}`} className="text-sm font-semibold text-gray-900 hover:text-indigo-600 transition-colors truncate block">
+                      {kiraci.email}
+                    </a>
+                  ) : (
+                    <p className="text-sm text-gray-400">—</p>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
         </div>
 
